@@ -1,3 +1,3 @@
 ```markdown
 - Run python app.py
-- Sample dataset (input.json) present in dataset folder
+- Sample input present in dataset folder
