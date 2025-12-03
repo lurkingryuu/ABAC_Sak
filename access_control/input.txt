@@ -1,0 +1,13 @@
+Enter size of Subject : 100
+Enter size of Object : 200
+Enter size of Environment : 4
+
+Enter number of attributes for each Subject : 3
+Enter number of attributes for each Object : 4
+Enter number of attributes for each Environment : 3
+
+Enter number of values for each Subject Attribute : 4, 5, 4
+Enter number of values for each Object Attribute: 3, 4, 3, 4
+Enter number of values for each Environment Attribute: 3, 4, 3
+
+Enter the number of rules : 50

@@ -1,0 +1,27 @@
+{
+    "subject_size": 200,
+    "object_size": 150,
+    "environment_size": 20,
+    "subject_attributes_count": 3,
+    "object_attributes_count": 4,
+    "environment_attributes_count": 2,
+    "subject_attributes_values": [30, 20, 5],
+    "object_attributes_values": [2, 3, 4, 5],
+    "environment_attributes_values": [1, 2],
+    "subject_distributions": [
+        {"distribution": "N", "mean": 3, "variance": 5},
+        {"distribution": "P", "lambda": 4, "k": 2},
+        {"distribution": "U"}
+    ],
+    "object_distributions": [
+        {"distribution": "P", "lambda": 3, "k": 1},
+        {"distribution": "N", "mean": 5, "variance": 2},
+        {"distribution": "N", "mean": 4, "variance": 1.5},
+        {"distribution": "P", "lambda": 2, "k": 1}
+    ],
+    "environment_distributions": [
+        {"distribution": "N", "mean": 2, "variance": 1},
+        {"distribution": "P", "lambda": 1, "k": 1}
+    ],
+    "rules_count": 20
+}
