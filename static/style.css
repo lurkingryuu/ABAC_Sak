@@ -279,6 +279,108 @@ h1 {
     }
 }
 
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 24px;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.tab-btn {
+    padding: 12px 24px;
+    border: none;
+    background: transparent;
+    color: #666;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: all 0.3s ease;
+    margin-bottom: -2px;
+}
+
+.tab-btn:hover {
+    color: #667eea;
+    background-color: #f8f9ff;
+}
+
+.tab-btn.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* JSON Editor */
+.editor-wrapper {
+    margin-bottom: 24px;
+}
+
+.editor-header {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+    justify-content: center;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+    padding: 8px 16px;
+    font-size: 14px;
+    min-width: auto;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background-color: #5a6268;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(108, 117, 125, 0.3);
+}
+
+.json-editor-container {
+    width: 100%;
+    min-height: 400px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    overflow: hidden;
+    transition: border-color 0.3s ease;
+    text-align: left; /* Override container's text-align: center */
+}
+
+.json-editor-container:focus-within {
+    border-color: #667eea;
+}
+
+/* Ensure Monaco editor content is left-aligned */
+.json-editor-container .monaco-editor {
+    text-align: left;
+}
+
+.json-editor-container .monaco-editor .view-lines {
+    text-align: left;
+}
+
+.json-error {
+    color: #721c24;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    margin-top: 8px;
+}
+
+.editor-footer {
+    margin-top: 8px;
+}
+
 /* Download Container */
 .download-container {
     margin-top: 24px;
@@ -328,6 +430,19 @@ h1 {
         min-width: auto;
     }
     
+    .tab-btn {
+        font-size: 14px;
+        padding: 10px 16px;
+    }
+    
+    .editor-header {
+        flex-direction: column;
+    }
+    
+    .json-editor-container {
+        min-height: 300px;
+    }
+    
     .progress-steps {
         padding: 0 10px;
     }
@@ -365,6 +480,15 @@ h1 {
         width: 36px;
         height: 36px;
         margin-bottom: 12px;
+    }
+    
+    .tab-btn {
+        font-size: 13px;
+        padding: 8px 12px;
+    }
+    
+    .json-editor-container {
+        min-height: 250px;
     }
     
     .step-icon {

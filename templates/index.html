@@ -5,39 +5,76 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Upload Input JSON</title>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+    <script>
+        // Configure Monaco Editor paths after loader is loaded
+        require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
+    </script>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>Upload Input JSON</h1>
-            <p class="subtitle">Upload your JSON file to generate access control outputs</p>
+            <p class="subtitle">Upload your JSON file or edit it directly to generate access control outputs</p>
         </div>
         
         <div id="message-container" class="message-container" style="display: none;"></div>
         
-        <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
-            <div class="file-input-wrapper">
-                <label for="file-input" class="file-label">
-                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="17 8 12 3 7 8"></polyline>
-                        <line x1="12" y1="3" x2="12" y2="15"></line>
-                    </svg>
-                    <span id="file-name" class="file-name">Choose a JSON file</span>
-                    <input type="file" id="file-input" name="file" accept=".json" required>
-                </label>
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="upload">Upload File</button>
+            <button class="tab-btn" data-tab="editor">Edit JSON</button>
+        </div>
+        
+        <!-- Upload File Tab -->
+        <div id="upload-tab" class="tab-content active">
+            <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
+                <div class="file-input-wrapper">
+                    <label for="file-input" class="file-label">
+                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <span id="file-name" class="file-name">Choose a JSON file</span>
+                        <input type="file" id="file-input" name="file" accept=".json" required>
+                    </label>
+                </div>
+                
+                <div class="button-group">
+                    <button type="submit" id="submit-btn" class="btn btn-primary">
+                        <span class="btn-text">Upload and Generate</span>
+                        <span class="btn-loader" style="display: none;">
+                            <span class="spinner"></span>
+                            Processing...
+                        </span>
+                    </button>
+                </div>
+            </form>
+        </div>
+        
+        <!-- Edit JSON Tab -->
+        <div id="editor-tab" class="tab-content">
+            <div class="editor-wrapper">
+                <div class="editor-header">
+                    <button type="button" id="load-example-btn" class="btn btn-secondary">Load Example</button>
+                    <button type="button" id="format-json-btn" class="btn btn-secondary">Format JSON</button>
+                </div>
+                <div id="json-editor" class="json-editor-container"></div>
+                <div class="editor-footer">
+                    <div id="json-error" class="json-error" style="display: none;"></div>
+                </div>
+                <div class="button-group">
+                    <button type="button" id="submit-json-btn" class="btn btn-primary">
+                        <span class="btn-text">Generate from JSON</span>
+                        <span class="btn-loader" style="display: none;">
+                            <span class="spinner"></span>
+                            Processing...
+                        </span>
+                    </button>
+                </div>
             </div>
-            
-            <div class="button-group">
-                <button type="submit" id="submit-btn" class="btn btn-primary">
-                    <span class="btn-text">Upload and Generate</span>
-                    <span class="btn-loader" style="display: none;">
-                        <span class="spinner"></span>
-                        Processing...
-                    </span>
-                </button>
-            </div>
-        </form>
+        </div>
         
         <div id="progress-container" class="progress-container" style="display: none;">
             <div class="progress-steps">
@@ -73,6 +110,254 @@
     </div>
     
     <script>
+        // Tab switching
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content');
+        
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetTab = button.getAttribute('data-tab');
+                
+                // Update active tab button
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                
+                // Update active tab content
+                tabContents.forEach(content => content.classList.remove('active'));
+                document.getElementById(`${targetTab}-tab`).classList.add('active');
+                
+                // Hide message when switching tabs
+                hideMessage();
+            });
+        });
+        
+        // Monaco Editor initialization
+        let monacoEditor = null;
+        const editorContainer = document.getElementById('json-editor');
+        
+        // Initialize Monaco Editor
+        function initializeMonacoEditor() {
+            if (typeof require === 'undefined') {
+                // Retry after a short delay if require is not yet available
+                setTimeout(initializeMonacoEditor, 100);
+                return;
+            }
+            
+            require(['vs/editor/editor.main'], function () {
+                if (!editorContainer) return;
+                
+                monacoEditor = monaco.editor.create(editorContainer, {
+                    value: '',
+                    language: 'json',
+                    theme: 'vs',
+                    automaticLayout: true,
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    fontSize: 14,
+                    lineNumbers: 'on',
+                    roundedSelection: false,
+                    formatOnPaste: true,
+                    formatOnType: true,
+                    wordWrap: 'on',
+                    tabSize: 4,
+                    insertSpaces: true,
+                    detectIndentation: false
+                });
+                
+                // Validate JSON on content change
+                monacoEditor.onDidChangeModelContent(() => {
+                    const jsonText = monacoEditor.getValue().trim();
+                    if (jsonText) {
+                        try {
+                            JSON.parse(jsonText);
+                            hideJsonError();
+                            // Clear Monaco markers
+                            monaco.editor.setModelMarkers(monacoEditor.getModel(), 'json', []);
+                        } catch (error) {
+                            // Monaco will show errors in the editor itself
+                        }
+                    } else {
+                        hideJsonError();
+                    }
+                });
+            });
+        }
+        
+        // Start initialization when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeMonacoEditor);
+        } else {
+            initializeMonacoEditor();
+        }
+        
+        // JSON Editor elements
+        const loadExampleBtn = document.getElementById('load-example-btn');
+        const formatJsonBtn = document.getElementById('format-json-btn');
+        const submitJsonBtn = document.getElementById('submit-json-btn');
+        const jsonError = document.getElementById('json-error');
+        const submitJsonBtnText = submitJsonBtn.querySelector('.btn-text');
+        const submitJsonBtnLoader = submitJsonBtn.querySelector('.btn-loader');
+        
+        // Load example JSON
+        loadExampleBtn.addEventListener('click', async () => {
+            if (!monacoEditor) {
+                showMessage('Editor is still loading. Please wait...', 'error');
+                return;
+            }
+            try {
+                const response = await fetch('/example');
+                if (!response.ok) {
+                    throw new Error('Failed to load example');
+                }
+                // Get the response as text to preserve formatting
+                const formattedJson = await response.text();
+                monacoEditor.setValue(formattedJson);
+                // Format the document using Monaco's formatter to ensure consistency
+                setTimeout(() => {
+                    monacoEditor.getAction('editor.action.formatDocument').run().catch(() => {
+                        // If format action fails, that's okay - the JSON is already formatted
+                    });
+                }, 100);
+                hideJsonError();
+                showMessage('Example JSON loaded', 'success');
+            } catch (error) {
+                showMessage('Failed to load example JSON: ' + error.message, 'error');
+            }
+        });
+        
+        // Format JSON
+        formatJsonBtn.addEventListener('click', () => {
+            if (!monacoEditor) {
+                showMessage('Editor is still loading. Please wait...', 'error');
+                return;
+            }
+            try {
+                const jsonText = monacoEditor.getValue().trim();
+                if (!jsonText) {
+                    showMessage('Editor is empty', 'error');
+                    return;
+                }
+                const parsed = JSON.parse(jsonText);
+                monacoEditor.setValue(JSON.stringify(parsed, null, 4));
+                // Trigger format action
+                monacoEditor.getAction('editor.action.formatDocument').run();
+                hideJsonError();
+                showMessage('JSON formatted successfully', 'success');
+            } catch (error) {
+                showJsonError('Invalid JSON: ' + error.message);
+                showMessage('Invalid JSON format', 'error');
+            }
+        });
+        
+        // Submit JSON from editor
+        submitJsonBtn.addEventListener('click', async () => {
+            if (!monacoEditor) {
+                showMessage('Editor is still loading. Please wait...', 'error');
+                return;
+            }
+            const jsonText = monacoEditor.getValue().trim();
+            
+            if (!jsonText) {
+                showMessage('Please enter JSON or load an example', 'error');
+                return;
+            }
+            
+            // Validate JSON
+            let jsonData;
+            try {
+                jsonData = JSON.parse(jsonText);
+            } catch (error) {
+                showJsonError('Invalid JSON: ' + error.message);
+                showMessage('Invalid JSON format. Please check your syntax.', 'error');
+                return;
+            }
+            
+            // Reset UI
+            hideMessage();
+            hideJsonError();
+            downloadContainer.style.display = 'none';
+            submitJsonBtn.disabled = true;
+            submitJsonBtnText.style.display = 'none';
+            submitJsonBtnLoader.style.display = 'flex';
+            progressContainer.style.display = 'block';
+            
+            // Reset progress steps
+            resetProgressSteps();
+            activateStep('step-upload');
+            
+            try {
+                showMessage('Uploading JSON...', 'success');
+                activateStep('step-upload');
+                
+                const uploadResponse = await fetch('/upload-json', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(jsonData)
+                });
+                
+                let uploadData;
+                const contentType = uploadResponse.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    try {
+                        uploadData = await uploadResponse.json();
+                    } catch (jsonError) {
+                        throw new Error('Server returned invalid JSON response.');
+                    }
+                } else {
+                    const text = await uploadResponse.text();
+                    throw new Error(`Unexpected response format: ${text.substring(0, 200)}`);
+                }
+                
+                if (!uploadResponse.ok || !uploadData.success) {
+                    const errorMsg = uploadData.error || uploadData.message || 'Failed to upload JSON';
+                    showMessage(errorMsg, 'error');
+                    resetProgressSteps();
+                    submitJsonBtn.disabled = false;
+                    submitJsonBtnText.style.display = 'inline';
+                    submitJsonBtnLoader.style.display = 'none';
+                    return;
+                }
+                
+                const jobId = uploadData.job_id;
+                if (!jobId) {
+                    throw new Error('No job ID received from server');
+                }
+                
+                showMessage('JSON uploaded. Processing in background...', 'success');
+                activateStep('step-process');
+                
+                // Poll for status
+                await pollJobStatus(jobId);
+                
+            } catch (error) {
+                let errorMessage = 'An error occurred during processing';
+                if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                    errorMessage = 'Network error: Unable to connect to the server. Please check your connection and try again.';
+                } else {
+                    errorMessage = 'Error: ' + error.message;
+                }
+                
+                showMessage(errorMessage, 'error');
+                resetProgressSteps();
+            } finally {
+                submitJsonBtn.disabled = false;
+                submitJsonBtnText.style.display = 'inline';
+                submitJsonBtnLoader.style.display = 'none';
+            }
+        });
+        
+        function showJsonError(message) {
+            jsonError.textContent = message;
+            jsonError.style.display = 'block';
+        }
+        
+        function hideJsonError() {
+            jsonError.style.display = 'none';
+        }
+        
+        // File upload form elements
         const form = document.getElementById('upload-form');
         const fileInput = document.getElementById('file-input');
         const fileName = document.getElementById('file-name');

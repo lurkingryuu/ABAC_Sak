@@ -6,6 +6,7 @@ import shutil
 import signal
 import threading
 import uuid
+import json
 from datetime import datetime
 from enum import Enum
 
@@ -163,6 +164,32 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/example', methods=['GET'])
+def get_example_json():
+    """Return example JSON format"""
+    example_json = {
+        "subject_size": 10,
+        "object_size": 15,
+        "environment_size": 5,
+        "subject_attributes_count": 3,
+        "object_attributes_count": 4,
+        "environment_attributes_count": 2,
+        "subject_attributes_values": [3, 4, 5],
+        "object_attributes_values": [2, 3, 4, 5],
+        "environment_attributes_values": [1, 2],
+        "subject_mean": 3,
+        "subject_variance": 1,
+        "object_mean": 4,
+        "object_variance": 1.5,
+        "environment_mean": 2,
+        "environment_variance": 0.5,
+        "rules_count": 20
+    }
+    # Return as formatted JSON string to ensure consistent formatting
+    formatted_json = json.dumps(example_json, indent=4, ensure_ascii=False)
+    return formatted_json, 200, {'Content-Type': 'application/json; charset=utf-8'}
+
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     """Upload file and start background processing"""
@@ -201,6 +228,69 @@ def upload_file():
             'message': 'File uploaded. Processing started in background.'
         }), 200
 
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'An unexpected error occurred: {str(e)}'
+        }), 500
+
+
+@app.route('/upload-json', methods=['POST'])
+def upload_json():
+    """Upload JSON from editor and start background processing"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No JSON data provided'
+            }), 400
+
+        # Validate JSON structure (basic validation)
+        required_fields = [
+            'subject_size', 'object_size', 'environment_size',
+            'subject_attributes_count', 'object_attributes_count',
+            'environment_attributes_count', 'rules_count'
+        ]
+        missing_fields = [
+            field for field in required_fields if field not in data
+        ]
+        if missing_fields:
+            fields_str = ', '.join(missing_fields)
+            return jsonify({
+                'success': False,
+                'error': f'Missing required fields: {fields_str}'
+            }), 400
+
+        # Save JSON to file
+        input_path = os.path.join(
+            app.config['UPLOAD_FOLDER'], 'input.json'
+        )
+        with open(input_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+
+        # Create background job
+        job_id = job_manager.create_job()
+
+        # Start background processing
+        thread = threading.Thread(
+            target=process_file_background,
+            args=(job_id,),
+            daemon=True
+        )
+        thread.start()
+
+        return jsonify({
+            'success': True,
+            'job_id': job_id,
+            'message': 'JSON uploaded. Processing started in background.'
+        }), 200
+
+    except json.JSONDecodeError:
+        return jsonify({
+            'success': False,
+            'error': 'Invalid JSON format'
+        }), 400
     except Exception as e:
         return jsonify({
             'success': False,
