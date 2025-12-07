@@ -1,0 +1,20 @@
+# WSGI Configuration File for PythonAnywhere
+# Copy this content to your PythonAnywhere WSGI file
+# Location: Web tab -> WSGI configuration file
+
+import sys
+import os
+
+path = '/home/abacsim/ABAC_Sak'
+if path not in sys.path:
+    sys.path.insert(0, path)
+
+# Change to project directory
+os.chdir(path)
+
+# Import your Flask app
+from app import app as application
+
+# Optional: Set environment variables if needed
+# os.environ['FLASK_ENV'] = 'production'
+
