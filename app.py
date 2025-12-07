@@ -2,8 +2,26 @@ from flask import Flask, render_template, request, send_from_directory
 import os
 import subprocess
 import sys
+import shutil
 
 app = Flask(__name__)
+
+
+def get_python_executable():
+    """
+    Get the correct Python executable path.
+    On PythonAnywhere/uwsgi, sys.executable points to uwsgi, not Python.
+    """
+    # If sys.executable is uwsgi, find the actual Python interpreter
+    if 'uwsgi' in sys.executable.lower():
+        # Try to find python3 in PATH
+        python_path = shutil.which('python3')
+        if python_path:
+            return python_path
+        # Fallback to 'python3' command
+        return 'python3'
+    return sys.executable
+
 
 UPLOAD_FOLDER = 'uploads'
 OUTPUT_FOLDER = 'outputs'
@@ -40,8 +58,9 @@ def upload_file():
                 ACCESS_CONTROL_FOLDER, 'input.py'
             )
             cwd = os.path.dirname(os.path.abspath(__file__))
+            python_exe = get_python_executable()
             subprocess.run(
-                [sys.executable, script_path],
+                [python_exe, script_path],
                 check=True,
                 cwd=cwd
             )
@@ -55,8 +74,9 @@ def upload_file():
                 ACCESS_CONTROL_FOLDER, 'gen.py'
             )
             cwd = os.path.dirname(os.path.abspath(__file__))
+            python_exe = get_python_executable()
             subprocess.run(
-                [sys.executable, script_path],
+                [python_exe, script_path],
                 check=True,
                 cwd=cwd
             )
