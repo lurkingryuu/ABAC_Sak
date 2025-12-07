@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, send_from_directory
+from flask import Flask, render_template, request, send_from_directory, jsonify
 import os
 import subprocess
 import sys
@@ -42,11 +42,17 @@ def index():
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
-        return "No file part", 400
+        return jsonify({'success': False, 'error': 'No file part'}), 400
+
     file = request.files['file']
     if file.filename == '':
-        return "No selected file", 400
-    if file:
+        return jsonify({'success': False, 'error': 'No selected file'}), 400
+
+    if not file.filename.endswith('.json'):
+        error_msg = 'Invalid file type. Please upload a JSON file.'
+        return jsonify({'success': False, 'error': error_msg}), 400
+
+    try:
         input_path = os.path.join(
             app.config['UPLOAD_FOLDER'], 'input.json'
         )
@@ -62,11 +68,16 @@ def upload_file():
             subprocess.run(
                 [python_exe, script_path],
                 check=True,
-                cwd=cwd
+                cwd=cwd,
+                capture_output=True,
+                text=True
             )
         except subprocess.CalledProcessError as e:
-            error_msg = f"Error: Failed to process input.json. {str(e)}"
-            return error_msg, 500
+            error_msg = f"Failed to process input.json: {e.stderr or str(e)}"
+            return jsonify({'success': False, 'error': error_msg}), 500
+        except Exception as e:
+            error_msg = f"Unexpected error during input processing: {str(e)}"
+            return jsonify({'success': False, 'error': error_msg}), 500
 
         # Step 2: Run gen.py to generate outputs
         try:
@@ -78,14 +89,26 @@ def upload_file():
             subprocess.run(
                 [python_exe, script_path],
                 check=True,
-                cwd=cwd
+                cwd=cwd,
+                capture_output=True,
+                text=True
             )
         except subprocess.CalledProcessError as e:
-            error_msg = f"Error: Failed to generate outputs. {str(e)}"
-            return error_msg, 500
+            error_msg = f"Failed to generate outputs: {e.stderr or str(e)}"
+            return jsonify({'success': False, 'error': error_msg}), 500
+        except Exception as e:
+            error_msg = f"Unexpected error during output generation: {str(e)}"
+            return jsonify({'success': False, 'error': error_msg}), 500
 
-        return ("Files generated successfully! "
-                "<a href='/download'>Download Outputs</a>")
+        return jsonify({
+            'success': True,
+            'message': 'Files generated successfully!'
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'An unexpected error occurred: {str(e)}'
+        }), 500
 
 
 @app.route('/download')

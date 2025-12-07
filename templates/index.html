@@ -8,11 +8,195 @@
 </head>
 <body>
     <div class="container">
-        <h1>Upload Input JSON</h1>
-        <form action="/upload" method="post" enctype="multipart/form-data">
-            <input type="file" name="file" accept=".json" required>
-            <button type="submit">Upload and Generate</button>
+        <div class="header">
+            <h1>Upload Input JSON</h1>
+            <p class="subtitle">Upload your JSON file to generate access control outputs</p>
+        </div>
+        
+        <div id="message-container" class="message-container" style="display: none;"></div>
+        
+        <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
+            <div class="file-input-wrapper">
+                <label for="file-input" class="file-label">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <span id="file-name" class="file-name">Choose a JSON file</span>
+                    <input type="file" id="file-input" name="file" accept=".json" required>
+                </label>
+            </div>
+            
+            <div class="button-group">
+                <button type="submit" id="submit-btn" class="btn btn-primary">
+                    <span class="btn-text">Upload and Generate</span>
+                    <span class="btn-loader" style="display: none;">
+                        <span class="spinner"></span>
+                        Processing...
+                    </span>
+                </button>
+            </div>
         </form>
+        
+        <div id="progress-container" class="progress-container" style="display: none;">
+            <div class="progress-steps">
+                <div class="step" id="step-upload">
+                    <div class="step-icon">1</div>
+                    <div class="step-label">Uploading file</div>
+                </div>
+                <div class="step" id="step-process">
+                    <div class="step-icon">2</div>
+                    <div class="step-label">Processing input</div>
+                </div>
+                <div class="step" id="step-generate">
+                    <div class="step-icon">3</div>
+                    <div class="step-label">Generating outputs</div>
+                </div>
+                <div class="step" id="step-complete">
+                    <div class="step-icon">✓</div>
+                    <div class="step-label">Complete</div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="download-container" class="download-container" style="display: none;">
+            <a href="/download" id="download-link" class="btn btn-success" download>
+                <svg class="download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Download Output
+            </a>
+        </div>
     </div>
+    
+    <script>
+        const form = document.getElementById('upload-form');
+        const fileInput = document.getElementById('file-input');
+        const fileName = document.getElementById('file-name');
+        const submitBtn = document.getElementById('submit-btn');
+        const btnText = submitBtn.querySelector('.btn-text');
+        const btnLoader = submitBtn.querySelector('.btn-loader');
+        const messageContainer = document.getElementById('message-container');
+        const progressContainer = document.getElementById('progress-container');
+        const downloadContainer = document.getElementById('download-container');
+        
+        // Update file name display
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                fileName.textContent = file.name;
+                fileName.classList.add('has-file');
+                hideMessage();
+            } else {
+                fileName.textContent = 'Choose a JSON file';
+                fileName.classList.remove('has-file');
+            }
+        });
+        
+        // Form submission
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const file = fileInput.files[0];
+            if (!file) {
+                showMessage('Please select a file first', 'error');
+                return;
+            }
+            
+            // Reset UI
+            hideMessage();
+            downloadContainer.style.display = 'none';
+            submitBtn.disabled = true;
+            btnText.style.display = 'none';
+            btnLoader.style.display = 'flex';
+            progressContainer.style.display = 'block';
+            
+            // Reset progress steps
+            resetProgressSteps();
+            activateStep('step-upload');
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                // Simulate upload step
+                await new Promise(resolve => setTimeout(resolve, 300));
+                activateStep('step-process');
+                
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                let data;
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    // Fallback for non-JSON responses
+                    const text = await response.text();
+                    data = { success: response.ok, message: text, error: text };
+                }
+                
+                if (response.ok && data.success) {
+                    activateStep('step-generate');
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    activateStep('step-complete');
+                    
+                    showMessage(data.message || 'Files generated successfully!', 'success');
+                    downloadContainer.style.display = 'block';
+                } else {
+                    showMessage(data.error || data.message || 'An error occurred during processing', 'error');
+                    resetProgressSteps();
+                }
+            } catch (error) {
+                showMessage('Network error: ' + error.message, 'error');
+                resetProgressSteps();
+            } finally {
+                submitBtn.disabled = false;
+                btnText.style.display = 'inline';
+                btnLoader.style.display = 'none';
+            }
+        });
+        
+        function showMessage(message, type) {
+            messageContainer.textContent = message;
+            messageContainer.className = `message-container message-${type}`;
+            messageContainer.style.display = 'block';
+        }
+        
+        function hideMessage() {
+            messageContainer.style.display = 'none';
+        }
+        
+        function resetProgressSteps() {
+            document.querySelectorAll('.step').forEach(step => {
+                step.classList.remove('active', 'completed');
+            });
+        }
+        
+        function activateStep(stepId) {
+            const step = document.getElementById(stepId);
+            if (step) {
+                // Mark previous steps as completed
+                const allSteps = document.querySelectorAll('.step');
+                allSteps.forEach(s => {
+                    if (s.id === stepId) {
+                        s.classList.add('active');
+                    } else if (s.id !== stepId && !s.classList.contains('completed')) {
+                        const currentIndex = Array.from(allSteps).indexOf(s);
+                        const activeIndex = Array.from(allSteps).indexOf(step);
+                        if (currentIndex < activeIndex) {
+                            s.classList.add('completed');
+                            s.classList.remove('active');
+                        }
+                    }
+                });
+            }
+        }
+    </script>
 </body>
 </html>
