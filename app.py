@@ -7,16 +7,25 @@ import signal
 import threading
 import uuid
 import json
+import requests
 from datetime import datetime
 from enum import Enum
+from dotenv import load_dotenv
+load_dotenv()
 
 # Handle SIGPIPE gracefully (client disconnections)
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
 
 app = Flask(__name__)
 
 # Configure timeouts
 PROCESS_TIMEOUT = 3600  # 1 hour timeout for subprocess calls (background jobs)
+
+# reCAPTCHA configuration
+RECAPTCHA_SITE_KEY = os.environ.get('RECAPTCHA_SITE_KEY', '').strip()
+RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY', '').strip()
+RECAPTCHA_VERIFY_URL = 'https://www.google.com/recaptcha/api/siteverify'
 
 
 class JobStatus(Enum):
@@ -159,9 +168,36 @@ def process_file_background(job_id):
         job_manager.update_job(job_id, JobStatus.FAILED, error=error_msg)
 
 
+def verify_recaptcha(recaptcha_response):
+    """Verify reCAPTCHA response with Google's API"""
+    if not RECAPTCHA_SECRET_KEY:
+        # If no secret key is configured, skip verification (for development)
+        return True
+
+    if not recaptcha_response:
+        return False
+
+    try:
+        data = {
+            'secret': RECAPTCHA_SECRET_KEY,
+            'response': recaptcha_response
+        }
+        response = requests.post(RECAPTCHA_VERIFY_URL, data=data, timeout=5)
+        result = response.json()
+        return result.get('success', False)
+    except Exception:
+        return False
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
+
+
+@app.route('/recaptcha-site-key', methods=['GET'])
+def get_recaptcha_site_key():
+    """Return reCAPTCHA site key to frontend"""
+    return jsonify({'site_key': RECAPTCHA_SITE_KEY}), 200
 
 
 @app.route('/example', methods=['GET'])
@@ -187,7 +223,8 @@ def get_example_json():
     }
     # Return as formatted JSON string to ensure consistent formatting
     formatted_json = json.dumps(example_json, indent=4, ensure_ascii=False)
-    return formatted_json, 200, {'Content-Type': 'application/json; charset=utf-8'}
+    headers = {'Content-Type': 'application/json; charset=utf-8'}
+    return formatted_json, 200, headers
 
 
 @app.route('/upload', methods=['POST'])
@@ -203,6 +240,14 @@ def upload_file():
     if not file.filename.endswith('.json'):
         error_msg = 'Invalid file type. Please upload a JSON file.'
         return jsonify({'success': False, 'error': error_msg}), 400
+
+    # Verify reCAPTCHA
+    recaptcha_response = request.form.get('g-recaptcha-response')
+    if not verify_recaptcha(recaptcha_response):
+        return jsonify({
+            'success': False,
+            'error': 'reCAPTCHA verification failed. Please try again.'
+        }), 400
 
     try:
         # Save file
@@ -244,6 +289,14 @@ def upload_json():
             return jsonify({
                 'success': False,
                 'error': 'No JSON data provided'
+            }), 400
+
+        # Verify reCAPTCHA
+        recaptcha_response = data.pop('g-recaptcha-response', None)
+        if not verify_recaptcha(recaptcha_response):
+            return jsonify({
+                'success': False,
+                'error': 'reCAPTCHA verification failed. Please try again.'
             }), 400
 
         # Validate JSON structure (basic validation)

@@ -6,6 +6,7 @@
     <title>Upload Input JSON</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+    <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit" async defer></script>
     <script>
         // Configure Monaco Editor paths after loader is loaded
         require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
@@ -41,6 +42,8 @@
                     </label>
                 </div>
                 
+                <div id="recaptcha-upload" style="margin: 20px 0;"></div>
+                
                 <div class="button-group">
                     <button type="submit" id="submit-btn" class="btn btn-primary">
                         <span class="btn-text">Upload and Generate</span>
@@ -64,6 +67,8 @@
                 <div class="editor-footer">
                     <div id="json-error" class="json-error" style="display: none;"></div>
                 </div>
+                <div id="recaptcha-json" style="margin: 20px 0;"></div>
+                
                 <div class="button-group">
                     <button type="button" id="submit-json-btn" class="btn btn-primary">
                         <span class="btn-text">Generate from JSON</span>
@@ -110,6 +115,92 @@
     </div>
     
     <script>
+        // Get reCAPTCHA site key from server
+        let recaptchaSiteKey = '';
+        let recaptchaWidgetIds = {
+            upload: null,
+            json: null
+        };
+        // Callback when reCAPTCHA script loads
+        window.onRecaptchaLoad = function() {
+            // Fetch site key and render widgets
+            fetch('/recaptcha-site-key')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.site_key && data.site_key.trim() !== '') {
+                        recaptchaSiteKey = data.site_key;
+                        // Render reCAPTCHA widgets and store widget IDs
+                        const recaptchaUpload = document.getElementById('recaptcha-upload');
+                        const recaptchaJson = document.getElementById('recaptcha-json');
+                        
+                        if (recaptchaUpload && recaptchaWidgetIds.upload === null) {
+                            try {
+                                recaptchaWidgetIds.upload = grecaptcha.render('recaptcha-upload', {
+                                    'sitekey': recaptchaSiteKey
+                                });
+                            } catch (error) {
+                                // Silently handle rendering errors
+                            }
+                        }
+                        if (recaptchaJson && recaptchaWidgetIds.json === null) {
+                            try {
+                                recaptchaWidgetIds.json = grecaptcha.render('recaptcha-json', {
+                                    'sitekey': recaptchaSiteKey
+                                });
+                            } catch (error) {
+                                // Silently handle rendering errors
+                            }
+                        }
+                    } else {
+                        // Hide reCAPTCHA containers if no site key
+                        const recaptchaUpload = document.getElementById('recaptcha-upload');
+                        const recaptchaJson = document.getElementById('recaptcha-json');
+                        if (recaptchaUpload) recaptchaUpload.style.display = 'none';
+                        if (recaptchaJson) recaptchaJson.style.display = 'none';
+                    }
+                })
+                .catch(error => {
+                    // Hide reCAPTCHA containers on error
+                    const recaptchaUpload = document.getElementById('recaptcha-upload');
+                    const recaptchaJson = document.getElementById('recaptcha-json');
+                    if (recaptchaUpload) recaptchaUpload.style.display = 'none';
+                    if (recaptchaJson) recaptchaJson.style.display = 'none';
+                });
+        };
+        
+        // Fallback initialization in case callback doesn't fire
+        let recaptchaInitAttempts = 0;
+        const MAX_RECAPTCHA_INIT_ATTEMPTS = 50; // 5 seconds max wait
+        
+        function initializeRecaptcha() {
+            recaptchaInitAttempts++;
+            
+            if (recaptchaInitAttempts > MAX_RECAPTCHA_INIT_ATTEMPTS) {
+                return;
+            }
+            
+            if (typeof grecaptcha !== 'undefined' && typeof window.onRecaptchaLoad === 'function') {
+                // Script is loaded, trigger callback manually
+                window.onRecaptchaLoad();
+                return;
+            }
+            
+            // Wait for reCAPTCHA script to load
+            setTimeout(initializeRecaptcha, 100);
+        }
+        
+        // Initialize reCAPTCHA when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeRecaptcha);
+        } else {
+            initializeRecaptcha();
+        }
+        
         // Tab switching
         const tabButtons = document.querySelectorAll('.tab-btn');
         const tabContents = document.querySelectorAll('.tab-content');
@@ -272,6 +363,20 @@
                 return;
             }
             
+            // Verify reCAPTCHA
+            if (typeof grecaptcha === 'undefined') {
+                showMessage('reCAPTCHA is not loaded. Please refresh the page.', 'error');
+                return;
+            }
+            const recaptchaWidgetId = recaptchaWidgetIds.json;
+            const recaptchaResponse = recaptchaWidgetId !== null 
+                ? grecaptcha.getResponse(recaptchaWidgetId) 
+                : grecaptcha.getResponse();
+            if (!recaptchaResponse) {
+                showMessage('Please complete the reCAPTCHA verification', 'error');
+                return;
+            }
+            
             // Reset UI
             hideMessage();
             hideJsonError();
@@ -294,7 +399,10 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(jsonData)
+                    body: JSON.stringify({
+                        ...jsonData,
+                        'g-recaptcha-response': recaptchaResponse
+                    })
                 });
                 
                 let uploadData;
@@ -317,6 +425,15 @@
                     submitJsonBtn.disabled = false;
                     submitJsonBtnText.style.display = 'inline';
                     submitJsonBtnLoader.style.display = 'none';
+                    // Reset reCAPTCHA on error
+                    if (typeof grecaptcha !== 'undefined') {
+                        const widgetId = recaptchaWidgetIds.json;
+                        if (widgetId !== null) {
+                            grecaptcha.reset(widgetId);
+                        } else {
+                            grecaptcha.reset();
+                        }
+                    }
                     return;
                 }
                 
@@ -341,6 +458,15 @@
                 
                 showMessage(errorMessage, 'error');
                 resetProgressSteps();
+                // Reset reCAPTCHA on error
+                if (typeof grecaptcha !== 'undefined') {
+                    const widgetId = recaptchaWidgetIds.json;
+                    if (widgetId !== null) {
+                        grecaptcha.reset(widgetId);
+                    } else {
+                        grecaptcha.reset();
+                    }
+                }
             } finally {
                 submitJsonBtn.disabled = false;
                 submitJsonBtnText.style.display = 'inline';
@@ -404,6 +530,20 @@
                 return;
             }
             
+            // Verify reCAPTCHA
+            if (typeof grecaptcha === 'undefined') {
+                showMessage('reCAPTCHA is not loaded. Please refresh the page.', 'error');
+                return;
+            }
+            const recaptchaWidgetId = recaptchaWidgetIds.upload;
+            const recaptchaResponse = recaptchaWidgetId !== null 
+                ? grecaptcha.getResponse(recaptchaWidgetId) 
+                : grecaptcha.getResponse();
+            if (!recaptchaResponse) {
+                showMessage('Please complete the reCAPTCHA verification', 'error');
+                return;
+            }
+            
             // Reset UI
             hideMessage();
             downloadContainer.style.display = 'none';
@@ -418,6 +558,7 @@
             
             const formData = new FormData();
             formData.append('file', file);
+            formData.append('g-recaptcha-response', recaptchaResponse);
             
             try {
                 // Upload file
@@ -452,6 +593,15 @@
                     submitBtn.disabled = false;
                     btnText.style.display = 'inline';
                     btnLoader.style.display = 'none';
+                    // Reset reCAPTCHA on error
+                    if (typeof grecaptcha !== 'undefined') {
+                        const widgetId = recaptchaWidgetIds.upload;
+                        if (widgetId !== null) {
+                            grecaptcha.reset(widgetId);
+                        } else {
+                            grecaptcha.reset();
+                        }
+                    }
                     return;
                 }
                 
@@ -477,6 +627,15 @@
                 
                 showMessage(errorMessage, 'error');
                 resetProgressSteps();
+                // Reset reCAPTCHA on error
+                if (typeof grecaptcha !== 'undefined') {
+                    const widgetId = recaptchaWidgetIds.upload;
+                    if (widgetId !== null) {
+                        grecaptcha.reset(widgetId);
+                    } else {
+                        grecaptcha.reset();
+                    }
+                }
             } finally {
                 submitBtn.disabled = false;
                 btnText.style.display = 'inline';
