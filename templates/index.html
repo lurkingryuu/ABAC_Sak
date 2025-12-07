@@ -122,44 +122,121 @@
             formData.append('file', file);
             
             try {
-                // Simulate upload step
-                await new Promise(resolve => setTimeout(resolve, 300));
-                activateStep('step-process');
+                // Upload file
+                activateStep('step-upload');
+                showMessage('Uploading file...', 'success');
                 
-                const response = await fetch('/upload', {
+                const uploadResponse = await fetch('/upload', {
                     method: 'POST',
                     body: formData
                 });
                 
-                let data;
-                const contentType = response.headers.get('content-type');
+                let uploadData;
+                const contentType = uploadResponse.headers.get('content-type');
                 if (contentType && contentType.includes('application/json')) {
-                    data = await response.json();
+                    uploadData = await uploadResponse.json();
                 } else {
-                    // Fallback for non-JSON responses
-                    const text = await response.text();
-                    data = { success: response.ok, message: text, error: text };
+                    const text = await uploadResponse.text();
+                    uploadData = { success: uploadResponse.ok, message: text, error: text };
                 }
                 
-                if (response.ok && data.success) {
-                    activateStep('step-generate');
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    activateStep('step-complete');
-                    
-                    showMessage(data.message || 'Files generated successfully!', 'success');
-                    downloadContainer.style.display = 'block';
-                } else {
-                    showMessage(data.error || data.message || 'An error occurred during processing', 'error');
+                if (!uploadResponse.ok || !uploadData.success) {
+                    const errorMsg = uploadData.error || uploadData.message || 'Failed to upload file';
+                    showMessage(errorMsg, 'error');
                     resetProgressSteps();
+                    submitBtn.disabled = false;
+                    btnText.style.display = 'inline';
+                    btnLoader.style.display = 'none';
+                    return;
                 }
+                
+                // Start polling for job status
+                const jobId = uploadData.job_id;
+                if (!jobId) {
+                    throw new Error('No job ID received from server');
+                }
+                
+                showMessage('File uploaded. Processing in background...', 'success');
+                activateStep('step-process');
+                
+                // Poll for status
+                await pollJobStatus(jobId);
+                
             } catch (error) {
-                showMessage('Network error: ' + error.message, 'error');
+                let errorMessage = 'An error occurred during processing';
+                if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                    errorMessage = 'Network error: Unable to connect to the server. Please check your connection and try again.';
+                } else {
+                    errorMessage = 'Error: ' + error.message;
+                }
+                
+                showMessage(errorMessage, 'error');
                 resetProgressSteps();
             } finally {
                 submitBtn.disabled = false;
                 btnText.style.display = 'inline';
                 btnLoader.style.display = 'none';
             }
+        });
+        
+        async function pollJobStatus(jobId) {
+            const maxAttempts = 3600; // Poll for up to 1 hour (1 second intervals)
+            let attempts = 0;
+            let pollInterval;
+            
+            return new Promise((resolve, reject) => {
+                pollInterval = setInterval(async () => {
+                    attempts++;
+                    
+                    if (attempts > maxAttempts) {
+                        clearInterval(pollInterval);
+                        showMessage('Processing is taking longer than expected. Please refresh the page to check status.', 'error');
+                        reject(new Error('Polling timeout'));
+                        return;
+                    }
+                    
+                    try {
+                        const response = await fetch(`/status/${jobId}`);
+                        const data = await response.json();
+                        
+                        if (!response.ok || !data.success) {
+                            clearInterval(pollInterval);
+                            const errorMsg = data.error || 'Failed to get job status';
+                            showMessage(errorMsg, 'error');
+                            resetProgressSteps();
+                            reject(new Error(errorMsg));
+                            return;
+                        }
+                        
+                        // Update progress based on status
+                        const status = data.status;
+                        if (status === 'processing') {
+                            activateStep('step-process');
+                        } else if (status === 'generating') {
+                            activateStep('step-generate');
+                        } else if (status === 'completed') {
+                            clearInterval(pollInterval);
+                            activateStep('step-complete');
+                            showMessage(data.message || 'Files generated successfully!', 'success');
+                            downloadContainer.style.display = 'block';
+                            resolve(data);
+                        } else if (status === 'failed') {
+                            clearInterval(pollInterval);
+                            const errorMsg = data.error || 'Processing failed';
+                            showMessage(errorMsg, 'error');
+                            resetProgressSteps();
+                            reject(new Error(errorMsg));
+                        }
+                        // If status is 'pending', continue polling
+                        
+                    } catch (error) {
+                        clearInterval(pollInterval);
+                        showMessage('Error checking job status: ' + error.message, 'error');
+                        reject(error);
+                    }
+                }, 1000); // Poll every second
+            });
+        }
         });
         
         function showMessage(message, type) {
