@@ -100,8 +100,14 @@ def poisson_pmf(lam, k):
     """Return Poisson PMF P(K=k) for integer k >= 0."""
     return (lam**k) * exp(-lam) / factorial(k)
 
-def sample_truncated_normal(mean=0.5, sigma=0.1, low=0.0, high=1.0):
-    """Sample a value from a Normal(mean, sigma^2) truncated to [low, high]."""
+# def sample_truncated_normal(mean=0.5, sigma=0.1, low=0.0, high=1.0):
+#     """Sample a value from a Normal(mean, sigma^2) truncated to [low, high]."""
+#     a, b = (low - mean) / sigma, (high - mean) / sigma
+#     return truncnorm.rvs(a, b, loc=mean, scale=sigma)
+
+def sample_truncated_normal(mean, variance, low, high):
+    """Sample a value from Normal(mean, variance) truncated to [low, high]."""
+    sigma = np.sqrt(variance)
     a, b = (low - mean) / sigma, (high - mean) / sigma
     return truncnorm.rvs(a, b, loc=mean, scale=sigma)
 
@@ -126,16 +132,20 @@ def assign_values(attribute_values, distributions, entity_count,
 
             if dist["distribution"] == "N":
                 # use defaults unless user provided overrides
-                # mean = dist.get("mean", 0.5)
-                mean=0.5
+                mean = dist.get("mean", (n+1)/2.0)
+                # mean=0.5
                 # variance = dist.get("variance", 0.01)
-                variance=0.01
-                sigma = np.sqrt(variance)
-                x = sample_truncated_normal(mean=mean, sigma=sigma, low=0.0, high=1.0)
+                variance = dist.get("variance", (n/6.0)**2)
+
+                # variance=0.01
+                # sigma = np.sqrt(variance)
+                x = sample_truncated_normal(mean=mean, variance=variance, low=0.0, high=float(n))
 
                 # map continuous x in [0,1] to one of n equal bins [0,1/n),[1/n,2/n),...
-                idx = int(x * n)
-                if idx == n:    # rare edge if x == 1.0
+                # map x ∈ [0,n] to bin k: choose a_k if x ∈ [k-1, k)
+                # 0-based index: idx = floor(x), then clamp to [0, n-1]
+                idx = int(x)
+                if idx >= n:    # rare edge if x == 1.0
                     idx = n - 1
                 entity_values[key].append(values[idx])
 
@@ -215,62 +225,62 @@ with open(os.path.join(OUTPUT_FOLDER, "rules_temp.txt"), "w") as file:
 print("Output generated successfully.")
 
 
-# Initialize the Access Control Matrix (ACM)
-A = [[[0] * n3 for _ in range(n2)] for _ in range(n1)]
+# # Initialize the Access Control Matrix (ACM)
+# A = [[[0] * n3 for _ in range(n2)] for _ in range(n1)]
 
-no_of_ones = 0
-def satisfies_rule(rule, SA1, OA1, EA1):
-    rule_parts = rule.split(", ")
-    for part in rule_parts:
-        key, value = part.split(" = ")
-        if key.startswith("SA_") and value not in SA1 and value != '*':
-            return False
-        if key.startswith("OA_") and value not in OA1 and value != '*':
-            return False
-        if key.startswith("EA_") and value not in EA1 and value != '*':
-            return False
-    return True
+# no_of_ones = 0
+# def satisfies_rule(rule, SA1, OA1, EA1):
+#     rule_parts = rule.split(", ")
+#     for part in rule_parts:
+#         key, value = part.split(" = ")
+#         if key.startswith("SA_") and value not in SA1 and value != '*':
+#             return False
+#         if key.startswith("OA_") and value not in OA1 and value != '*':
+#             return False
+#         if key.startswith("EA_") and value not in EA1 and value != '*':
+#             return False
+#     return True
 
-def fill_matrix(A, SV, OV, EV, rules, n1, n2, n3):
-    global no_of_ones
-    for i in range(n1):
-        for j in range(n2):
-            for k in range(n3):
-                # Access SV, OV, and EV using subject, object, and environment names
-                SA1 = SV[f"S_{i + 1}"]
-                OA1 = OV[f"O_{j + 1}"]
-                EA1 = EV[f"E_{k + 1}"]
+# def fill_matrix(A, SV, OV, EV, rules, n1, n2, n3):
+#     global no_of_ones
+#     for i in range(n1):
+#         for j in range(n2):
+#             for k in range(n3):
+#                 # Access SV, OV, and EV using subject, object, and environment names
+#                 SA1 = SV[f"S_{i + 1}"]
+#                 OA1 = OV[f"O_{j + 1}"]
+#                 EA1 = EV[f"E_{k + 1}"]
                 
-                # Check if any rule is satisfied
-                A[i][j][k] = 1 if any(satisfies_rule(rule, SA1, OA1, EA1) for rule in rules) else 0
-                no_of_ones += A[i][j][k]
+#                 # Check if any rule is satisfied
+#                 A[i][j][k] = 1 if any(satisfies_rule(rule, SA1, OA1, EA1) for rule in rules) else 0
+#                 no_of_ones += A[i][j][k]
 
-fill_matrix(A, SV, OV, EV, rules, n1, n2, n3)
-print("No. of ones in ACM : ", no_of_ones)
+# fill_matrix(A, SV, OV, EV, rules, n1, n2, n3)
+# print("No. of ones in ACM : ", no_of_ones)
 
-# Write ACM to ACM.txt
-with open(os.path.join(OUTPUT_FOLDER, "ACM.txt"), "w") as file:
-    for i in range(n1):
-        for row in A[i]:
-            file.write(" ".join(map(str, row)) + "\n")
-        file.write("\n")
+# # Write ACM to ACM.txt
+# with open(os.path.join(OUTPUT_FOLDER, "ACM.txt"), "w") as file:
+#     for i in range(n1):
+#         for row in A[i]:
+#             file.write(" ".join(map(str, row)) + "\n")
+#         file.write("\n")
 
-# Prepare access_data.txt
-def prepare_access_data(S, O, E, SV, OV, EV, A):
-    access_data = []
-    for i in range(len(S)):
-        for j in range(len(O)):
-            for k in range(len(E)):
-                # Access SV, OV, and EV using subject, object, and environment names
-                subject = S[i]
-                obj = O[j]
-                env = E[k]
-                T = SV[subject] + OV[obj] + EV[env] + [A[i][j][k]]  # Concatenate attributes and access decision
-                access_data.append(T)
-    return access_data
+# # Prepare access_data.txt
+# def prepare_access_data(S, O, E, SV, OV, EV, A):
+#     access_data = []
+#     for i in range(len(S)):
+#         for j in range(len(O)):
+#             for k in range(len(E)):
+#                 # Access SV, OV, and EV using subject, object, and environment names
+#                 subject = S[i]
+#                 obj = O[j]
+#                 env = E[k]
+#                 T = SV[subject] + OV[obj] + EV[env] + [A[i][j][k]]  # Concatenate attributes and access decision
+#                 access_data.append(T)
+#     return access_data
 
-access_data = prepare_access_data(S, O, E, SV, OV, EV, A)
+# access_data = prepare_access_data(S, O, E, SV, OV, EV, A)
 
-with open(os.path.join(OUTPUT_FOLDER, "access_data.txt"), "w") as file:
-    for row in access_data:
-        file.write(" ".join(map(str, row)) + "\n")
+# with open(os.path.join(OUTPUT_FOLDER, "access_data.txt"), "w") as file:
+#     for row in access_data:
+#         file.write(" ".join(map(str, row)) + "\n")

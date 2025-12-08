@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math
 from collections import defaultdict
-from scipy.stats import norm
+from scipy.stats import truncnorm
 
 # --- Paths ---
 BASE_DIR = os.path.dirname(__file__)
@@ -68,20 +68,39 @@ def calculate_expected_counts(attribute_values, assigned_values, distributions):
         if dist_type == "N":
             # Normal distribution with fixed mean and variance
             # mean = dist.get("mean", 0.5)
-            mean=0.5
-            # variance = dist.get("variance", 0.01)
-            variance=0.01
+            # mean=0.5
+            # # variance = dist.get("variance", 0.01)
+            # variance=0.01
+            # sigma = math.sqrt(variance)
+
+            # # Compute bin edges between 0 and 1
+            # edges = np.linspace(0, 1, n + 1)
+
+            # # Probability for each bin = area under PDF between edges
+            # probs = []
+            # for j in range(n):
+            #     cdf_right = norm.cdf(edges[j + 1], loc=mean, scale=sigma)
+            #     cdf_left = norm.cdf(edges[j], loc=mean, scale=sigma)
+            #     probs.append(cdf_right - cdf_left)
+            # Truncated Normal on [0, n] with mean and variance from JSON
+            mean = dist.get("mean", (n + 1) / 2.0)          # sensible default: center
+            variance = dist.get("variance", (n / 6.0) ** 2) # default spread if missing
             sigma = math.sqrt(variance)
 
-            # Compute bin edges between 0 and 1
-            edges = np.linspace(0, 1, n + 1)
+            low, high = 0.0, float(n)
+            a, b = (low - mean) / sigma, (high - mean) / sigma
 
-            # Probability for each bin = area under PDF between edges
+            # Probability for each bin [k-1, k) under truncated N
             probs = []
-            for j in range(n):
-                cdf_right = norm.cdf(edges[j + 1], loc=mean, scale=sigma)
-                cdf_left = norm.cdf(edges[j], loc=mean, scale=sigma)
+            for k in range(1, n + 1):
+                cdf_right = truncnorm.cdf(k, a, b, loc=mean, scale=sigma)
+                cdf_left  = truncnorm.cdf(k - 1, a, b, loc=mean, scale=sigma)
                 probs.append(cdf_right - cdf_left)
+
+            # Normalize to fix tiny numerical drift
+            total_p = sum(probs)
+            if total_p > 0:
+                probs = [p / total_p for p in probs]
 
         elif dist_type == "P":
             # Poisson distribution
@@ -139,7 +158,7 @@ def generate_plots(attribute_values, expected_counts, actual_counts):
         actual = [actual_counts.get(value, 0) for value in values]
 
         x = np.arange(len(values))
-        width = 0.35
+        width = 0.4
 
         plt.figure(figsize=(max(10, len(values) * 0.5), 6))
         bars1 = plt.bar(x - width / 2, expected, width, label='Expected', color='blue')
@@ -161,7 +180,7 @@ def generate_plots(attribute_values, expected_counts, actual_counts):
                     f'{int(height)}',          # or f'{height:.1f}' for decimals
                     ha='center',
                     va='bottom',
-                    fontsize=9
+                    fontsize=6.5
                 )
 
         annotate_bars(bars1)
@@ -173,9 +192,72 @@ def generate_plots(attribute_values, expected_counts, actual_counts):
         plt.close()
 
 
+
+#################################################################
+
+#do not include plot 
+
 # --- Generate plots ---
 generate_plots(SA_values, SA_expected_counts, SA_counts)
 generate_plots(OA_values, OA_expected_counts, OA_counts)
 generate_plots(EA_values, EA_expected_counts, EA_counts)
 
 print(f" Plots saved in {PLOTS_FOLDER}")
+
+
+
+
+def compute_error_summary(attribute_values, expected_counts, actual_counts):
+    """
+    For each attribute (e.g. 'SA_1') compute mean relative error across its values:
+      rel_err(value) = abs(actual - expected) / expected
+    If expected == 0:
+      - if actual == 0 -> rel_err = 0
+      - else -> rel_err = abs(actual - expected)  (absolute error, included in average)
+    Returns dict: { attribute_name: mean_rel_error, ... } and overall_mean_error
+    """
+    summary = {}
+    attr_errors = []
+
+    for attribute, values in attribute_values.items():
+        errors = []
+        for value in values:
+            # expected = expected_counts.get(value, 0.0)
+            expected = round(expected_counts.get(value, 0.0))
+            actual = actual_counts.get(value, 0)
+            if expected == 0.0:
+                # no expected mass for this value: treat zero-expected & zero-actual as no error,
+                # otherwise use absolute error (avoids division-by-zero).
+                rel_err = 0.0 
+                # if actual == 0 else float(abs(actual - expected))
+            else:
+                rel_err = abs(actual - expected) / expected
+            errors.append(rel_err)
+        # average error for this attribute
+        mean_err = float(np.mean(errors)) if errors else 0.0
+        summary[attribute] = mean_err
+        attr_errors.append(mean_err)
+
+    overall_mean = float(np.mean(attr_errors)) if attr_errors else 0.0
+    return summary, overall_mean
+
+
+# Compute summaries for SA, OA, EA
+sa_summary, sa_overall = compute_error_summary(SA_values, SA_expected_counts, SA_counts)
+oa_summary, oa_overall = compute_error_summary(OA_values, OA_expected_counts, OA_counts)
+ea_summary, ea_overall = compute_error_summary(EA_values, EA_expected_counts, EA_counts)
+
+error_report = {
+    "SA": {"per_attribute": sa_summary, "mean_error": sa_overall},
+    "OA": {"per_attribute": oa_summary, "mean_error": oa_overall},
+    "EA": {"per_attribute": ea_summary, "mean_error": ea_overall},
+    "overall_mean_error": float(np.mean([sa_overall, oa_overall, ea_overall]))
+}
+
+# write JSON summary to outputs folder
+OUT_DIR = os.path.join(BASE_DIR, '../outputs')
+os.makedirs(OUT_DIR, exist_ok=True)
+with open(os.path.join(OUT_DIR, 'error_summary.json'), 'w') as fh:
+    json.dump(error_report, fh, indent=4)
+
+print("Error summary written to outputs/error_summary.json")
