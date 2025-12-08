@@ -1,7 +1,7 @@
 {
-    "subject_size": 200,
-    "object_size": 150,
-    "environment_size": 50,
+    "subject_size": 10000,
+    "object_size": 1500,
+    "environment_size":200,
     "subject_attributes_count": 6,
     "object_attributes_count": 5,
     "environment_attributes_count": 4,
