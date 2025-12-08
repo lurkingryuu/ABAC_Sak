@@ -225,62 +225,64 @@ with open(os.path.join(OUTPUT_FOLDER, "rules_temp.txt"), "w") as file:
 print("Output generated successfully.")
 
 
-# # Initialize the Access Control Matrix (ACM)
-# A = [[[0] * n3 for _ in range(n2)] for _ in range(n1)]
 
-# no_of_ones = 0
-# def satisfies_rule(rule, SA1, OA1, EA1):
-#     rule_parts = rule.split(", ")
-#     for part in rule_parts:
-#         key, value = part.split(" = ")
-#         if key.startswith("SA_") and value not in SA1 and value != '*':
-#             return False
-#         if key.startswith("OA_") and value not in OA1 and value != '*':
-#             return False
-#         if key.startswith("EA_") and value not in EA1 and value != '*':
-#             return False
-#     return True
 
-# def fill_matrix(A, SV, OV, EV, rules, n1, n2, n3):
-#     global no_of_ones
-#     for i in range(n1):
-#         for j in range(n2):
-#             for k in range(n3):
-#                 # Access SV, OV, and EV using subject, object, and environment names
-#                 SA1 = SV[f"S_{i + 1}"]
-#                 OA1 = OV[f"O_{j + 1}"]
-#                 EA1 = EV[f"E_{k + 1}"]
+# Initialize the Access Control Matrix (ACM)
+A = [[[0] * n3 for _ in range(n2)] for _ in range(n1)]
+
+no_of_ones = 0
+def satisfies_rule(rule, SA1, OA1, EA1):
+    rule_parts = rule.split(", ")
+    for part in rule_parts:
+        key, value = part.split(" = ")
+        if key.startswith("SA_") and value not in SA1 and value != '*':
+            return False
+        if key.startswith("OA_") and value not in OA1 and value != '*':
+            return False
+        if key.startswith("EA_") and value not in EA1 and value != '*':
+            return False
+    return True
+
+def fill_matrix(A, SV, OV, EV, rules, n1, n2, n3):
+    global no_of_ones
+    for i in range(n1):
+        for j in range(n2):
+            for k in range(n3):
+                # Access SV, OV, and EV using subject, object, and environment names
+                SA1 = SV[f"S_{i + 1}"]
+                OA1 = OV[f"O_{j + 1}"]
+                EA1 = EV[f"E_{k + 1}"]
                 
-#                 # Check if any rule is satisfied
-#                 A[i][j][k] = 1 if any(satisfies_rule(rule, SA1, OA1, EA1) for rule in rules) else 0
-#                 no_of_ones += A[i][j][k]
+                # Check if any rule is satisfied
+                A[i][j][k] = 1 if any(satisfies_rule(rule, SA1, OA1, EA1) for rule in rules) else 0
+                no_of_ones += A[i][j][k]
 
-# fill_matrix(A, SV, OV, EV, rules, n1, n2, n3)
-# print("No. of ones in ACM : ", no_of_ones)
+fill_matrix(A, SV, OV, EV, rules, n1, n2, n3)
+print("No. of ones in ACM : ", no_of_ones)
 
-# # Write ACM to ACM.txt
-# with open(os.path.join(OUTPUT_FOLDER, "ACM.txt"), "w") as file:
-#     for i in range(n1):
-#         for row in A[i]:
-#             file.write(" ".join(map(str, row)) + "\n")
-#         file.write("\n")
+# Write ACM to ACM.txt
+with open(os.path.join(OUTPUT_FOLDER, "ACM.txt"), "w") as file:
+    for i in range(n1):
+        for row in A[i]:
+            file.write(" ".join(map(str, row)) + "\n")
+        file.write("\n")
 
-# # Prepare access_data.txt
-# def prepare_access_data(S, O, E, SV, OV, EV, A):
-#     access_data = []
-#     for i in range(len(S)):
-#         for j in range(len(O)):
-#             for k in range(len(E)):
-#                 # Access SV, OV, and EV using subject, object, and environment names
-#                 subject = S[i]
-#                 obj = O[j]
-#                 env = E[k]
-#                 T = SV[subject] + OV[obj] + EV[env] + [A[i][j][k]]  # Concatenate attributes and access decision
-#                 access_data.append(T)
-#     return access_data
+# Prepare access_data.txt
+def prepare_access_data(S, O, E, SV, OV, EV, A):
+    access_data = []
+    for i in range(len(S)):
+        for j in range(len(O)):
+            for k in range(len(E)):
+                # Access SV, OV, and EV using subject, object, and environment names
+                subject = S[i]
+                obj = O[j]
+                env = E[k]
+                T = SV[subject] + OV[obj] + EV[env] + [A[i][j][k]]  # Concatenate attributes and access decision
+                access_data.append(T)
+    return access_data
 
-# access_data = prepare_access_data(S, O, E, SV, OV, EV, A)
+access_data = prepare_access_data(S, O, E, SV, OV, EV, A)
 
-# with open(os.path.join(OUTPUT_FOLDER, "access_data.txt"), "w") as file:
-#     for row in access_data:
-#         file.write(" ".join(map(str, row)) + "\n")
+with open(os.path.join(OUTPUT_FOLDER, "access_data.txt"), "w") as file:
+    for row in access_data:
+        file.write(" ".join(map(str, row)) + "\n")

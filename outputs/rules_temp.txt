@@ -1,30 +1,20 @@
-SA_1 = SA_1_18, SA_2 = SA_2_5, SA_3 = SA_3_1, SA_4 = SA_4_11, SA_5 = SA_5_2, SA_6 = SA_6_4, OA_1 = OA_1_6, OA_2 = OA_2_5, OA_3 = OA_3_3, OA_4 = OA_4_2, OA_5 = OA_5_2, EA_1 = EA_1_3, EA_2 = EA_2_3, EA_3 = EA_3_1, EA_4 = EA_4_5
-SA_1 = SA_1_15, SA_2 = SA_2_9, SA_3 = SA_3_5, SA_4 = SA_4_10, SA_5 = SA_5_4, SA_6 = SA_6_4, OA_1 = OA_1_7, OA_2 = OA_2_4, OA_3 = OA_3_3, OA_4 = OA_4_1, OA_5 = OA_5_4, EA_1 = EA_1_5, EA_2 = EA_2_3, EA_3 = EA_3_4, EA_4 = EA_4_5
-SA_1 = SA_1_10, SA_2 = SA_2_8, SA_3 = SA_3_3, SA_4 = SA_4_11, SA_5 = SA_5_3, SA_6 = SA_6_7, OA_1 = OA_1_4, OA_2 = OA_2_3, OA_3 = OA_3_2, OA_4 = OA_4_3, OA_5 = OA_5_3, EA_1 = EA_1_4, EA_2 = EA_2_3, EA_3 = EA_3_4, EA_4 = EA_4_6
-SA_1 = SA_1_13, SA_2 = SA_2_7, SA_3 = SA_3_6, SA_4 = SA_4_7, SA_5 = SA_5_5, SA_6 = SA_6_3, OA_1 = OA_1_7, OA_2 = OA_2_2, OA_3 = OA_3_4, OA_4 = OA_4_1, OA_5 = OA_5_6, EA_1 = EA_1_1, EA_2 = EA_2_1, EA_3 = EA_3_1, EA_4 = EA_4_4
-SA_1 = SA_1_17, SA_2 = SA_2_6, SA_3 = SA_3_10, SA_4 = SA_4_9, SA_5 = SA_5_3, SA_6 = SA_6_6, OA_1 = OA_1_4, OA_2 = OA_2_4, OA_3 = OA_3_3, OA_4 = OA_4_3, OA_5 = OA_5_3, EA_1 = EA_1_1, EA_2 = EA_2_1, EA_3 = EA_3_1, EA_4 = EA_4_5
-SA_1 = SA_1_14, SA_2 = SA_2_14, SA_3 = SA_3_7, SA_4 = SA_4_8, SA_5 = SA_5_5, SA_6 = SA_6_6, OA_1 = OA_1_2, OA_2 = OA_2_3, OA_3 = OA_3_3, OA_4 = OA_4_2, OA_5 = OA_5_5, EA_1 = EA_1_3, EA_2 = EA_2_5, EA_3 = EA_3_3, EA_4 = EA_4_6
-SA_1 = SA_1_15, SA_2 = SA_2_7, SA_3 = SA_3_4, SA_4 = SA_4_9, SA_5 = SA_5_3, SA_6 = SA_6_3, OA_1 = OA_1_4, OA_2 = OA_2_5, OA_3 = OA_3_3, OA_4 = OA_4_1, OA_5 = OA_5_1, EA_1 = EA_1_1, EA_2 = EA_2_3, EA_3 = EA_3_3, EA_4 = EA_4_4
-SA_1 = SA_1_17, SA_2 = SA_2_5, SA_3 = SA_3_6, SA_4 = SA_4_11, SA_5 = SA_5_3, SA_6 = SA_6_7, OA_1 = OA_1_5, OA_2 = OA_2_3, OA_3 = OA_3_3, OA_4 = OA_4_2, OA_5 = OA_5_1, EA_1 = EA_1_4, EA_2 = EA_2_2, EA_3 = EA_3_3, EA_4 = EA_4_3
-SA_1 = SA_1_17, SA_2 = SA_2_16, SA_3 = SA_3_8, SA_4 = SA_4_11, SA_5 = SA_5_1, SA_6 = SA_6_8, OA_1 = OA_1_5, OA_2 = OA_2_4, OA_3 = OA_3_2, OA_4 = OA_4_1, OA_5 = OA_5_5, EA_1 = EA_1_2, EA_2 = EA_2_3, EA_3 = EA_3_3, EA_4 = EA_4_4
-SA_1 = SA_1_14, SA_2 = SA_2_13, SA_3 = SA_3_1, SA_4 = SA_4_9, SA_5 = SA_5_5, SA_6 = SA_6_4, OA_1 = OA_1_3, OA_2 = OA_2_4, OA_3 = OA_3_2, OA_4 = OA_4_2, OA_5 = OA_5_5, EA_1 = EA_1_2, EA_2 = EA_2_2, EA_3 = EA_3_3, EA_4 = EA_4_4
-SA_1 = SA_1_15, SA_2 = SA_2_13, SA_3 = SA_3_9, SA_4 = SA_4_6, SA_5 = SA_5_1, SA_6 = SA_6_5, OA_1 = OA_1_6, OA_2 = OA_2_3, OA_3 = OA_3_3, OA_4 = OA_4_1, OA_5 = OA_5_6, EA_1 = EA_1_3, EA_2 = EA_2_4, EA_3 = EA_3_3, EA_4 = EA_4_3
-SA_1 = SA_1_19, SA_2 = SA_2_15, SA_3 = SA_3_5, SA_4 = SA_4_8, SA_5 = SA_5_5, SA_6 = SA_6_7, OA_1 = OA_1_6, OA_2 = OA_2_3, OA_3 = OA_3_2, OA_4 = OA_4_3, OA_5 = OA_5_4, EA_1 = EA_1_3, EA_2 = EA_2_4, EA_3 = EA_3_4, EA_4 = EA_4_2
-SA_1 = SA_1_18, SA_2 = SA_2_9, SA_3 = SA_3_2, SA_4 = SA_4_11, SA_5 = SA_5_1, SA_6 = SA_6_5, OA_1 = OA_1_2, OA_2 = OA_2_3, OA_3 = OA_3_3, OA_4 = OA_4_1, OA_5 = OA_5_6, EA_1 = EA_1_2, EA_2 = EA_2_2, EA_3 = EA_3_3, EA_4 = EA_4_6
-SA_1 = SA_1_17, SA_2 = SA_2_5, SA_3 = SA_3_2, SA_4 = SA_4_7, SA_5 = SA_5_5, SA_6 = SA_6_6, OA_1 = OA_1_10, OA_2 = OA_2_3, OA_3 = OA_3_2, OA_4 = OA_4_3, OA_5 = OA_5_1, EA_1 = EA_1_3, EA_2 = EA_2_4, EA_3 = EA_3_4, EA_4 = EA_4_6
-SA_1 = SA_1_19, SA_2 = *, SA_3 = SA_3_7, SA_4 = SA_4_9, SA_5 = SA_5_1, SA_6 = SA_6_6, OA_1 = OA_1_3, OA_2 = OA_2_3, OA_3 = OA_3_3, OA_4 = OA_4_3, OA_5 = OA_5_3, EA_1 = EA_1_1, EA_2 = EA_2_1, EA_3 = EA_3_3, EA_4 = EA_4_5
-SA_1 = SA_1_14, SA_2 = SA_2_13, SA_3 = SA_3_7, SA_4 = SA_4_10, SA_5 = SA_5_4, SA_6 = SA_6_8, OA_1 = OA_1_7, OA_2 = OA_2_3, OA_3 = OA_3_3, OA_4 = OA_4_1, OA_5 = OA_5_1, EA_1 = EA_1_4, EA_2 = EA_2_3, EA_3 = EA_3_1, EA_4 = EA_4_5
-SA_1 = SA_1_15, SA_2 = SA_2_13, SA_3 = SA_3_1, SA_4 = SA_4_5, SA_5 = SA_5_2, SA_6 = SA_6_5, OA_1 = OA_1_3, OA_2 = OA_2_4, OA_3 = OA_3_3, OA_4 = OA_4_1, OA_5 = OA_5_2, EA_1 = EA_1_3, EA_2 = EA_2_2, EA_3 = EA_3_3, EA_4 = EA_4_6
-SA_1 = SA_1_13, SA_2 = SA_2_10, SA_3 = SA_3_8, SA_4 = SA_4_9, SA_5 = SA_5_1, SA_6 = SA_6_6, OA_1 = OA_1_2, OA_2 = OA_2_3, OA_3 = OA_3_3, OA_4 = *, OA_5 = OA_5_1, EA_1 = EA_1_1, EA_2 = EA_2_2, EA_3 = EA_3_4, EA_4 = EA_4_5
-SA_1 = SA_1_15, SA_2 = SA_2_10, SA_3 = SA_3_9, SA_4 = SA_4_10, SA_5 = SA_5_2, SA_6 = SA_6_7, OA_1 = OA_1_3, OA_2 = OA_2_5, OA_3 = OA_3_2, OA_4 = OA_4_3, OA_5 = OA_5_6, EA_1 = EA_1_3, EA_2 = EA_2_1, EA_3 = EA_3_3, EA_4 = EA_4_6
-SA_1 = SA_1_19, SA_2 = SA_2_9, SA_3 = SA_3_4, SA_4 = SA_4_5, SA_5 = SA_5_4, SA_6 = SA_6_2, OA_1 = OA_1_9, OA_2 = OA_2_5, OA_3 = OA_3_3, OA_4 = OA_4_1, OA_5 = OA_5_1, EA_1 = EA_1_1, EA_2 = EA_2_6, EA_3 = EA_3_3, EA_4 = EA_4_6
-SA_1 = SA_1_14, SA_2 = SA_2_8, SA_3 = *, SA_4 = SA_4_9, SA_5 = SA_5_1, SA_6 = SA_6_2, OA_1 = OA_1_6, OA_2 = OA_2_2, OA_3 = OA_3_3, OA_4 = OA_4_3, OA_5 = OA_5_5, EA_1 = EA_1_1, EA_2 = EA_2_2, EA_3 = EA_3_2, EA_4 = EA_4_3
-SA_1 = SA_1_15, SA_2 = SA_2_7, SA_3 = SA_3_6, SA_4 = SA_4_13, SA_5 = SA_5_2, SA_6 = SA_6_1, OA_1 = OA_1_8, OA_2 = OA_2_2, OA_3 = OA_3_3, OA_4 = OA_4_1, OA_5 = OA_5_6, EA_1 = EA_1_2, EA_2 = EA_2_4, EA_3 = EA_3_1, EA_4 = EA_4_6
-SA_1 = SA_1_14, SA_2 = SA_2_12, SA_3 = SA_3_2, SA_4 = SA_4_13, SA_5 = SA_5_1, SA_6 = SA_6_2, OA_1 = OA_1_3, OA_2 = OA_2_3, OA_3 = OA_3_3, OA_4 = OA_4_1, OA_5 = OA_5_6, EA_1 = EA_1_3, EA_2 = EA_2_1, EA_3 = EA_3_3, EA_4 = EA_4_6
-SA_1 = SA_1_16, SA_2 = SA_2_6, SA_3 = SA_3_2, SA_4 = SA_4_10, SA_5 = SA_5_4, SA_6 = SA_6_7, OA_1 = OA_1_3, OA_2 = OA_2_3, OA_3 = OA_3_3, OA_4 = OA_4_3, OA_5 = OA_5_5, EA_1 = EA_1_2, EA_2 = EA_2_3, EA_3 = EA_3_4, EA_4 = EA_4_4
-SA_1 = SA_1_16, SA_2 = SA_2_11, SA_3 = SA_3_1, SA_4 = SA_4_10, SA_5 = SA_5_4, SA_6 = SA_6_4, OA_1 = OA_1_2, OA_2 = OA_2_4, OA_3 = OA_3_3, OA_4 = OA_4_2, OA_5 = OA_5_6, EA_1 = EA_1_5, EA_2 = EA_2_1, EA_3 = EA_3_1, EA_4 = EA_4_6
-SA_1 = SA_1_15, SA_2 = SA_2_9, SA_3 = SA_3_7, SA_4 = SA_4_8, SA_5 = SA_5_1, SA_6 = SA_6_7, OA_1 = OA_1_2, OA_2 = OA_2_5, OA_3 = *, OA_4 = OA_4_3, OA_5 = OA_5_4, EA_1 = EA_1_5, EA_2 = EA_2_3, EA_3 = EA_3_1, EA_4 = EA_4_5
-SA_1 = *, SA_2 = SA_2_12, SA_3 = SA_3_5, SA_4 = SA_4_9, SA_5 = SA_5_2, SA_6 = SA_6_3, OA_1 = OA_1_5, OA_2 = OA_2_4, OA_3 = OA_3_4, OA_4 = OA_4_2, OA_5 = OA_5_6, EA_1 = EA_1_1, EA_2 = EA_2_1, EA_3 = EA_3_1, EA_4 = EA_4_5
-SA_1 = SA_1_16, SA_2 = SA_2_16, SA_3 = SA_3_6, SA_4 = SA_4_8, SA_5 = SA_5_1, SA_6 = SA_6_4, OA_1 = OA_1_5, OA_2 = OA_2_4, OA_3 = OA_3_4, OA_4 = OA_4_2, OA_5 = OA_5_6, EA_1 = EA_1_3, EA_2 = EA_2_1, EA_3 = EA_3_1, EA_4 = EA_4_3
-SA_1 = SA_1_13, SA_2 = SA_2_6, SA_3 = SA_3_5, SA_4 = SA_4_11, SA_5 = SA_5_4, SA_6 = SA_6_3, OA_1 = OA_1_3, OA_2 = OA_2_3, OA_3 = OA_3_4, OA_4 = OA_4_3, OA_5 = OA_5_3, EA_1 = EA_1_4, EA_2 = EA_2_1, EA_3 = EA_3_3, EA_4 = EA_4_3
-SA_1 = SA_1_16, SA_2 = SA_2_14, SA_3 = SA_3_3, SA_4 = SA_4_12, SA_5 = SA_5_4, SA_6 = SA_6_7, OA_1 = OA_1_4, OA_2 = OA_2_5, OA_3 = OA_3_3, OA_4 = OA_4_1, OA_5 = OA_5_1, EA_1 = EA_1_2, EA_2 = EA_2_5, EA_3 = EA_3_4, EA_4 = EA_4_2
+SA_1 = SA_1_2, SA_2 = SA_2_3, SA_3 = SA_3_5, OA_1 = OA_1_2, OA_2 = OA_2_1, OA_3 = OA_3_4, OA_4 = OA_4_1, EA_1 = EA_1_1, EA_2 = EA_2_2
+SA_1 = SA_1_2, SA_2 = SA_2_3, SA_3 = SA_3_5, OA_1 = OA_1_2, OA_2 = OA_2_3, OA_3 = OA_3_4, OA_4 = OA_4_3, EA_1 = EA_1_1, EA_2 = EA_2_2
+SA_1 = SA_1_3, SA_2 = SA_2_4, SA_3 = SA_3_4, OA_1 = OA_1_1, OA_2 = OA_2_1, OA_3 = OA_3_2, OA_4 = OA_4_2, EA_1 = EA_1_1, EA_2 = EA_2_1
+SA_1 = SA_1_2, SA_2 = SA_2_3, SA_3 = SA_3_4, OA_1 = OA_1_2, OA_2 = OA_2_1, OA_3 = OA_3_4, OA_4 = OA_4_1, EA_1 = EA_1_1, EA_2 = EA_2_2
+SA_1 = SA_1_3, SA_2 = SA_2_2, SA_3 = SA_3_5, OA_1 = OA_1_1, OA_2 = OA_2_1, OA_3 = OA_3_2, OA_4 = OA_4_2, EA_1 = EA_1_1, EA_2 = EA_2_1
+SA_1 = SA_1_3, SA_2 = SA_2_4, SA_3 = SA_3_4, OA_1 = OA_1_2, OA_2 = OA_2_2, OA_3 = OA_3_2, OA_4 = OA_4_1, EA_1 = EA_1_1, EA_2 = EA_2_2
+SA_1 = SA_1_3, SA_2 = SA_2_3, SA_3 = SA_3_5, OA_1 = OA_1_2, OA_2 = OA_2_3, OA_3 = OA_3_4, OA_4 = OA_4_3, EA_1 = EA_1_1, EA_2 = EA_2_2
+SA_1 = SA_1_3, SA_2 = SA_2_3, SA_3 = SA_3_2, OA_1 = OA_1_2, OA_2 = OA_2_1, OA_3 = OA_3_4, OA_4 = OA_4_1, EA_1 = EA_1_1, EA_2 = EA_2_2
+SA_1 = SA_1_3, SA_2 = SA_2_3, SA_3 = SA_3_5, OA_1 = OA_1_2, OA_2 = OA_2_1, OA_3 = OA_3_4, OA_4 = OA_4_1, EA_1 = EA_1_1, EA_2 = EA_2_1
+SA_1 = SA_1_3, SA_2 = *, SA_3 = SA_3_5, OA_1 = OA_1_2, OA_2 = OA_2_1, OA_3 = OA_3_4, OA_4 = OA_4_1, EA_1 = EA_1_1, EA_2 = EA_2_2
+SA_1 = SA_1_3, SA_2 = SA_2_2, SA_3 = SA_3_5, OA_1 = OA_1_2, OA_2 = OA_2_3, OA_3 = OA_3_4, OA_4 = OA_4_3, EA_1 = EA_1_1, EA_2 = EA_2_1
+SA_1 = SA_1_3, SA_2 = SA_2_2, SA_3 = SA_3_3, OA_1 = OA_1_1, OA_2 = OA_2_1, OA_3 = OA_3_4, OA_4 = OA_4_2, EA_1 = EA_1_1, EA_2 = EA_2_2
+SA_1 = SA_1_3, SA_2 = SA_2_4, SA_3 = SA_3_4, OA_1 = OA_1_2, OA_2 = OA_2_3, OA_3 = OA_3_4, OA_4 = OA_4_2, EA_1 = EA_1_1, EA_2 = EA_2_2
+SA_1 = SA_1_3, SA_2 = SA_2_2, SA_3 = SA_3_5, OA_1 = OA_1_2, OA_2 = OA_2_3, OA_3 = OA_3_4, OA_4 = OA_4_2, EA_1 = EA_1_1, EA_2 = EA_2_2
+SA_1 = SA_1_3, SA_2 = SA_2_2, SA_3 = SA_3_3, OA_1 = OA_1_1, OA_2 = OA_2_2, OA_3 = OA_3_4, OA_4 = *, EA_1 = EA_1_1, EA_2 = EA_2_2
+SA_1 = SA_1_3, SA_2 = SA_2_2, SA_3 = SA_3_5, OA_1 = OA_1_2, OA_2 = OA_2_3, OA_3 = OA_3_4, OA_4 = OA_4_2, EA_1 = EA_1_1, EA_2 = EA_2_1
+SA_1 = SA_1_2, SA_2 = SA_2_3, SA_3 = SA_3_4, OA_1 = OA_1_1, OA_2 = OA_2_2, OA_3 = OA_3_3, OA_4 = OA_4_1, EA_1 = EA_1_1, EA_2 = EA_2_1
+SA_1 = SA_1_3, SA_2 = SA_2_2, SA_3 = SA_3_3, OA_1 = OA_1_2, OA_2 = OA_2_3, OA_3 = OA_3_3, OA_4 = OA_4_3, EA_1 = EA_1_1, EA_2 = EA_2_1
+SA_1 = SA_1_3, SA_2 = SA_2_1, SA_3 = SA_3_5, OA_1 = OA_1_1, OA_2 = *, OA_3 = OA_3_2, OA_4 = OA_4_2, EA_1 = EA_1_1, EA_2 = EA_2_2
+SA_1 = SA_1_3, SA_2 = SA_2_4, SA_3 = SA_3_4, OA_1 = OA_1_2, OA_2 = OA_2_3, OA_3 = OA_3_4, OA_4 = OA_4_2, EA_1 = EA_1_1, EA_2 = EA_2_2
