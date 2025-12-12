@@ -1,4 +1,11 @@
-from flask import Flask, render_template, request, send_from_directory, jsonify
+from flask import (
+    Flask,
+    jsonify,
+    render_template,
+    request,
+    send_file,
+    send_from_directory,
+)
 import os
 import subprocess
 import sys
@@ -7,9 +14,11 @@ import signal
 import threading
 import uuid
 import json
-import requests
+import requests  # type: ignore[import-untyped]
 from datetime import datetime
 from enum import Enum
+import io
+import zipfile
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -19,8 +28,8 @@ signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
 app = Flask(__name__)
 
-# Configure timeouts
-PROCESS_TIMEOUT = 3600  # 1 hour timeout for subprocess calls (background jobs)
+# Configure timeouts (1 hour timeout for subprocess calls / background jobs)
+PROCESS_TIMEOUT = 3600
 
 # reCAPTCHA configuration
 RECAPTCHA_SITE_KEY = os.environ.get('RECAPTCHA_SITE_KEY', '').strip()
@@ -154,6 +163,8 @@ def process_file_background(job_id):
             timeout=PROCESS_TIMEOUT
         )
 
+        # NOTE: plot/error-summary generation is intentionally NOT run here.
+        # Trigger it on-demand instead of during every upload.
         job_manager.update_job(job_id, JobStatus.COMPLETED, progress=100)
 
     except subprocess.TimeoutExpired:
@@ -378,16 +389,82 @@ def get_job_status(job_id):
 
 @app.route('/download')
 def download_outputs():
-    """Download the output file"""
-    file_path = os.path.join(
-        app.config['OUTPUT_FOLDER'], 'output.json'
-    )
+    """
+    Download a single output file from outputs/.
+
+    - Default: output.json
+    - Also supports other known output artifacts via `?file=...`
+    """
+    requested = (request.args.get('file') or 'output.json').strip()
+
+    # Prevent path traversal and keep this endpoint scoped to outputs/.
+    if not requested or os.path.basename(requested) != requested:
+        return "Invalid file name.", 400
+
+    # Allow only known artifacts to avoid exposing arbitrary files.
+    allowed_files = {
+        'output.json',
+        'rules_temp.txt',
+        'ACM.txt',
+        'access_data.txt',
+        'error_summary.json',
+    }
+    if requested not in allowed_files:
+        return "Requested file is not available.", 404
+
+    file_path = os.path.join(app.config['OUTPUT_FOLDER'], requested)
     if not os.path.exists(file_path):
-        error_msg = ("Error: output.json not found. "
-                     "Ensure the process completed successfully.")
-        return error_msg, 404
+        return (
+            f"Error: {requested} not found. "
+            "Ensure the process completed successfully.",
+            404,
+        )
+
+    return send_from_directory(app.config['OUTPUT_FOLDER'], requested)
+
+
+@app.route('/download/error-summary')
+def download_error_summary():
+    """Download the error summary JSON produced by access_control/plot.py."""
+    file_path = os.path.join(app.config['OUTPUT_FOLDER'], 'error_summary.json')
+    if not os.path.exists(file_path):
+        return (
+            "Error: error_summary.json not found. "
+            "Ensure the job completed and plot generation ran successfully.",
+            404,
+        )
     return send_from_directory(
-        app.config['OUTPUT_FOLDER'], 'output.json'
+        app.config['OUTPUT_FOLDER'], 'error_summary.json'
+    )
+
+
+@app.route('/download/bundle.zip')
+def download_bundle():
+    """
+    Download a zip containing:
+      - outputs/* (output.json, rules_temp.txt, ACM.txt, access_data.txt,
+        error_summary.json if present)
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    outputs_dir = os.path.join(base_dir, app.config['OUTPUT_FOLDER'])
+
+    mem = io.BytesIO()
+    with zipfile.ZipFile(
+        mem, mode='w', compression=zipfile.ZIP_DEFLATED
+    ) as zf:
+        if os.path.isdir(outputs_dir):
+            for root, _, files in os.walk(outputs_dir):
+                for name in files:
+                    abs_path = os.path.join(root, name)
+                    rel_path = os.path.relpath(abs_path, base_dir)
+                    zf.write(abs_path, rel_path)
+
+    mem.seek(0)
+    return send_file(
+        mem,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name='abac_outputs.zip'
     )
 
 

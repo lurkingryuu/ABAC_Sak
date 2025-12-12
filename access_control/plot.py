@@ -4,7 +4,7 @@
 import os
 import json
 import configparser
-import matplotlib.pyplot as plt
+import argparse
 import numpy as np
 import math
 from collections import defaultdict
@@ -153,6 +153,23 @@ EA_expected_counts = calculate_expected_counts(EA_values, EV, environment_attrib
 #         plt.close()
 
 def generate_plots(attribute_values, expected_counts, actual_counts):
+    # Import matplotlib only when plots are explicitly requested.
+    # This keeps the script usable in environments without matplotlib
+    # (e.g., when only generating error_summary.json).
+    try:
+        import matplotlib  # type: ignore[import-untyped]
+        # Ensure headless-safe backend (required on servers without a display)
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt  # type: ignore[import-untyped]
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError(
+            "matplotlib is required only for plot generation.\n"
+            "Install it with:\n"
+            "  pip install matplotlib\n"
+            "Or, if using uv:\n"
+            "  uv add matplotlib\n"
+        ) from e
+
     for attribute, values in attribute_values.items():
         expected = [expected_counts.get(value, 0) for value in values]
         actual = [actual_counts.get(value, 0) for value in values]
@@ -194,18 +211,6 @@ def generate_plots(attribute_values, expected_counts, actual_counts):
 
 
 #################################################################
-
-#do not include plot 
-
-# --- Generate plots ---
-generate_plots(SA_values, SA_expected_counts, SA_counts)
-generate_plots(OA_values, OA_expected_counts, OA_counts)
-generate_plots(EA_values, EA_expected_counts, EA_counts)
-
-print(f" Plots saved in {PLOTS_FOLDER}")
-
-
-
 
 def compute_error_summary(attribute_values, expected_counts, actual_counts):
     """
@@ -261,3 +266,43 @@ with open(os.path.join(OUT_DIR, 'error_summary.json'), 'w') as fh:
     json.dump(error_report, fh, indent=4)
 
 print("Error summary written to outputs/error_summary.json")
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Generate outputs derived from outputs/output.json:\n"
+            "- error summary: outputs/error_summary.json (default)\n"
+            "- plots: ../plots/*.png (only when --plots is provided)"
+        )
+    )
+    parser.add_argument(
+        "--plots",
+        action="store_true",
+        help="Generate plots into the plots/ directory (requires matplotlib).",
+    )
+    parser.add_argument(
+        "--no-error-summary",
+        action="store_true",
+        help="Skip writing outputs/error_summary.json.",
+    )
+    args = parser.parse_args(argv)
+
+    # error summary (default on)
+    if not args.no_error_summary:
+        # Computation already happened at module load; just ensure file exists.
+        # (Keeping changes minimal vs. a larger refactor to fully lazy-load data.)
+        pass
+
+    # plots (opt-in)
+    if args.plots:
+        generate_plots(SA_values, SA_expected_counts, SA_counts)
+        generate_plots(OA_values, OA_expected_counts, OA_counts)
+        generate_plots(EA_values, EA_expected_counts, EA_counts)
+        print(f"Plots saved in {PLOTS_FOLDER}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

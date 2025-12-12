@@ -139,18 +139,61 @@
         </div>
         
         <div id="download-container" class="download-container" style="display: none;">
-            <a href="/download" id="download-link" class="btn btn-success" download>
+            <a href="/download/bundle.zip" id="download-bundle-link" class="btn btn-success" download>
                 <svg class="download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                     <polyline points="7 10 12 15 17 10"></polyline>
                     <line x1="12" y1="15" x2="12" y2="3"></line>
                 </svg>
-                Download Output
+                Download Outputs Bundle
             </a>
+
+            <div class="dropdown">
+                <button type="button" class="other-downloads-toggle" aria-haspopup="true" aria-expanded="false">
+                    Other downloads
+                    <svg class="dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+                <div class="dropdown-content">
+                    <a href="/download?file=output.json" download>Download output.json</a>
+                    <a href="/download?file=rules_temp.txt" download>Download rules_temp.txt</a>
+                    <a href="/download?file=ACM.txt" download>Download ACM.txt</a>
+                    <a href="/download?file=access_data.txt" download>Download access_data.txt</a>
+                    <a href="/download/error-summary" download>Download Error Summary</a>
+                </div>
+            </div>
         </div>
     </div>
     
     <script>
+        // Dropdown functionality
+        document.addEventListener('DOMContentLoaded', () => {
+            const dropdown = document.querySelector('.dropdown');
+            const dropdownBtn = document.querySelector('.other-downloads-toggle');
+            const dropdownContent = document.querySelector('.dropdown-content');
+
+            if (!dropdown || !dropdownBtn || !dropdownContent) return;
+
+            dropdownBtn.addEventListener('click', (event) => {
+                event.stopPropagation(); // Prevent window click handler from closing immediately
+                const isOpen = dropdownContent.classList.toggle('show');
+                dropdownBtn.classList.toggle('active', isOpen);
+                dropdownBtn.setAttribute('aria-expanded', String(isOpen));
+            });
+
+            // Close the dropdown if the user clicks outside of it
+            window.addEventListener('click', (event) => {
+                const target = event.target;
+                if (!(target instanceof Element)) return;
+                if (!dropdown.contains(target)) {
+                    dropdownContent.classList.remove('show');
+                    dropdownBtn.classList.remove('active');
+                    dropdownBtn.setAttribute('aria-expanded', 'false');
+                }
+            });
+        });
+
         // Get reCAPTCHA site key from server
         let recaptchaSiteKey = '';
         let recaptchaWidgetIds = {
