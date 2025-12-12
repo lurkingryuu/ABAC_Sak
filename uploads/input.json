@@ -1,27 +1,92 @@
 {
-    "subject_size": 12,
-    "object_size": 15,
-    "environment_size": 5,
-    "subject_attributes_count": 3,
-    "object_attributes_count": 4,
-    "environment_attributes_count": 2,
-    "subject_attributes_values": [3, 4, 5],
-    "object_attributes_values": [2, 3, 4, 5],
-    "environment_attributes_values": [1, 2],
+    "subject_size": 200,
+    "object_size": 150,
+    "environment_size": 50,
+    "subject_attributes_count": 6,
+    "object_attributes_count": 5,
+    "environment_attributes_count": 4,
+    "subject_attributes_values": [
+        30,
+        20,
+        10,
+        18,
+        5,
+        10
+    ],
+    "object_attributes_values": [
+        10,
+        5,
+        4,
+        3,
+        6
+    ],
+    "environment_attributes_values": [
+        5,
+        6,
+        4,
+        7
+    ],
     "subject_distributions": [
-        {"distribution": "N"},
-        {"distribution": "P", "lambda": 4},
-        {"distribution": "N", "mean": 7, "variance": 8}
+        {
+            "distribution": "N",
+            "mean": 15,
+            "variance": 4
+        },
+        {
+            "distribution": "P",
+            "lambda": 10
+        },
+        {
+            "distribution": "U"
+        },
+        {
+            "distribution": "N",
+            "mean": 9,
+            "variance": 5
+        },
+        {
+            "distribution": "U"
+        },
+        {
+            "distribution": "P",
+            "lambda": 5
+        }
     ],
     "object_distributions": [
-        {"distribution": "P", "lambda": 3},
-        {"distribution": "U"},
-        {"distribution": "N", "mean": 4, "variance": 1.5},
-        {"distribution": "P", "lambda": 2}
+        {
+            "distribution": "P",
+            "lambda": 6
+        },
+        {
+            "distribution": "N"
+        },
+        {
+            "distribution": "N"
+        },
+        {
+            "distribution": "P",
+            "lambda": 2
+        },
+        {
+            "distribution": "U"
+        }
     ],
     "environment_distributions": [
-        {"distribution": "N", "mean": 2, "variance": 1},
-        {"distribution": "P", "lambda": 1}
+        {
+            "distribution": "N",
+            "mean": 2,
+            "variance": 1
+        },
+        {
+            "distribution": "P",
+            "lambda": 3
+        },
+        {
+            "distribution": "U"
+        },
+        {
+            "distribution": "N"
+        }
     ],
-    "rules_count": 20
+    "rules_count": 30
 }

@@ -2,6 +2,9 @@
 import os
 import json
 import configparser
+import matplotlib
+# Ensure headless-safe backend (required on servers without a display)
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import math

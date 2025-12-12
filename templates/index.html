@@ -5,14 +5,913 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Upload Input JSON</title>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
+    <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit" async defer></script>
+    <script>
+        // Configure Monaco Editor paths after loader is loaded
+        require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
+    </script>
 </head>
 <body>
     <div class="container">
-        <h1>Upload Input JSON</h1>
-        <form action="/upload" method="post" enctype="multipart/form-data">
-            <input type="file" name="file" accept=".json" required>
-            <button type="submit">Upload and Generate</button>
-        </form>
+        <div class="header">
+            <h1>SIMA: ABAC Simulator</h1>
+            <p class="subtitle">Upload your JSON file or edit it directly to generate ABAC rules and outputs</p>
+        </div>
+        
+        <div id="message-container" class="message-container" style="display: none;"></div>
+        
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="upload">Upload File</button>
+            <button class="tab-btn" data-tab="editor">Edit JSON</button>
+            <button class="tab-btn" data-tab="schema">Schema / Format</button>
+        </div>
+        
+        <!-- Upload File Tab -->
+        <div id="upload-tab" class="tab-content active">
+            <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
+                <div class="file-input-wrapper">
+                    <label for="file-input" class="file-label">
+                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="17 8 12 3 7 8"></polyline>
+                            <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <span id="file-name" class="file-name">Choose a JSON file</span>
+                        <input type="file" id="file-input" name="file" accept=".json" required>
+                    </label>
+                </div>
+                
+                <div id="recaptcha-upload" style="margin: 20px 0;"></div>
+                
+                <div class="button-group">
+                    <button type="submit" id="submit-btn" class="btn btn-primary">
+                        <span class="btn-text">Upload and Generate</span>
+                        <span class="btn-loader" style="display: none;">
+                            <span class="spinner"></span>
+                            Processing...
+                        </span>
+                    </button>
+                </div>
+            </form>
+        </div>
+        
+        <!-- Edit JSON Tab -->
+        <div id="editor-tab" class="tab-content">
+            <div class="editor-wrapper">
+                <div class="editor-header">
+                    <button type="button" id="load-example-btn" class="btn btn-secondary">Load Example</button>
+                </div>
+                <div id="json-editor" class="json-editor-container"></div>
+                <div class="editor-footer">
+                    <div id="json-error" class="json-error" style="display: none;"></div>
+                </div>
+                <div id="recaptcha-json" style="margin: 20px 0;"></div>
+                
+                <div class="button-group">
+                    <button type="button" id="submit-json-btn" class="btn btn-primary">
+                        <span class="btn-text">Generate from JSON</span>
+                        <span class="btn-loader" style="display: none;">
+                            <span class="spinner"></span>
+                            Processing...
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Schema / Format Tab -->
+        <div id="schema-tab" class="tab-content">
+            <div class="schema-wrapper">
+                <h2 class="schema-title">JSON Schema / Format</h2>
+                <p class="schema-subtitle">
+                    Use this format for uploads or the editor. The example below is loaded from the server.
+                </p>
+
+                <div class="schema-section">
+                    <div class="schema-section-title">Required top-level fields</div>
+                    <ul class="schema-list">
+                        <li><code>subject_size</code>, <code>object_size</code>, <code>environment_size</code> (number)</li>
+                        <li><code>subject_attributes_count</code>, <code>object_attributes_count</code>, <code>environment_attributes_count</code> (number)</li>
+                        <li><code>subject_attributes_values</code>, <code>object_attributes_values</code>, <code>environment_attributes_values</code> (array of numbers)</li>
+                        <li><code>subject_distributions</code>, <code>object_distributions</code>, <code>environment_distributions</code> (array of objects)</li>
+                        <li><code>rules_count</code> (number)</li>
+                    </ul>
+                </div>
+
+                <div class="schema-section">
+                    <div class="schema-section-title">Distributions format</div>
+                    <div class="schema-note">
+                        Each item supports a <code>distribution</code> code like <code>"N"</code> (Normal),
+                        <code>"P"</code> (Poisson), <code>"U"</code> (Uniform). Some distributions may include
+                        parameters like <code>mean</code>/<code>variance</code> or <code>lambda</code>.
+                    </div>
+                    <pre id="schema-skeleton" class="schema-pre"></pre>
+                </div>
+
+                <div class="schema-section">
+                    <div class="schema-section-title">Example JSON</div>
+                    <pre id="schema-example" class="schema-pre">Loading example…</pre>
+                </div>
+            </div>
+        </div>
+        
+        <div id="progress-container" class="progress-container" style="display: none;">
+            <div class="progress-steps">
+                <div class="step" id="step-upload">
+                    <div class="step-icon">1</div>
+                    <div class="step-label">Uploading file</div>
+                </div>
+                <div class="step" id="step-process">
+                    <div class="step-icon">2</div>
+                    <div class="step-label">Processing input</div>
+                </div>
+                <div class="step" id="step-generate">
+                    <div class="step-icon">3</div>
+                    <div class="step-label">Generating outputs</div>
+                </div>
+                <div class="step" id="step-complete">
+                    <div class="step-icon">✓</div>
+                    <div class="step-label">Complete</div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="download-container" class="download-container" style="display: none;">
+            <a href="/download/bundle.zip" id="download-bundle-link" class="btn btn-success" download>
+                <svg class="download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Download Outputs Bundle
+            </a>
+
+            <div class="dropdown" style="display: none;">
+                <button type="button" class="other-downloads-toggle" aria-haspopup="true" aria-expanded="false">
+                    Other downloads
+                    <svg class="dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </button>
+                <div class="dropdown-content">
+                    <a href="/download?file=output.json" download>Download output.json</a>
+                    <a href="/download?file=rules_temp.txt" download>Download rules_temp.txt</a>
+                    <a href="/download?file=ACM.txt" download>Download ACM.txt</a>
+                    <a href="/download?file=access_data.txt" download>Download access_data.txt</a>
+                </div>
+            </div>
+        </div>
     </div>
+    
+    <script>
+        // Dropdown functionality
+        document.addEventListener('DOMContentLoaded', () => {
+            const dropdown = document.querySelector('.dropdown');
+            const dropdownBtn = document.querySelector('.other-downloads-toggle');
+            const dropdownContent = document.querySelector('.dropdown-content');
+
+            if (!dropdown || !dropdownBtn || !dropdownContent) return;
+
+            dropdownBtn.addEventListener('click', (event) => {
+                event.stopPropagation(); // Prevent window click handler from closing immediately
+                const isOpen = dropdownContent.classList.toggle('show');
+                dropdownBtn.classList.toggle('active', isOpen);
+                dropdownBtn.setAttribute('aria-expanded', String(isOpen));
+            });
+
+            // Close the dropdown if the user clicks outside of it
+            window.addEventListener('click', (event) => {
+                const target = event.target;
+                if (!(target instanceof Element)) return;
+                if (!dropdown.contains(target)) {
+                    dropdownContent.classList.remove('show');
+                    dropdownBtn.classList.remove('active');
+                    dropdownBtn.setAttribute('aria-expanded', 'false');
+                }
+            });
+        });
+
+        // Get reCAPTCHA site key from server
+        let recaptchaSiteKey = '';
+        let recaptchaWidgetIds = {
+            upload: null,
+            json: null
+        };
+        // Callback when reCAPTCHA script loads
+        window.onRecaptchaLoad = function() {
+            // Fetch site key and render widgets
+            fetch('/recaptcha-site-key')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.site_key && data.site_key.trim() !== '') {
+                        recaptchaSiteKey = data.site_key;
+                        // Render reCAPTCHA widgets and store widget IDs
+                        const recaptchaUpload = document.getElementById('recaptcha-upload');
+                        const recaptchaJson = document.getElementById('recaptcha-json');
+                        
+                        if (recaptchaUpload && recaptchaWidgetIds.upload === null) {
+                            try {
+                                recaptchaWidgetIds.upload = grecaptcha.render('recaptcha-upload', {
+                                    'sitekey': recaptchaSiteKey
+                                });
+                            } catch (error) {
+                                // Silently handle rendering errors
+                            }
+                        }
+                        if (recaptchaJson && recaptchaWidgetIds.json === null) {
+                            try {
+                                recaptchaWidgetIds.json = grecaptcha.render('recaptcha-json', {
+                                    'sitekey': recaptchaSiteKey
+                                });
+                            } catch (error) {
+                                // Silently handle rendering errors
+                            }
+                        }
+                    } else {
+                        // Hide reCAPTCHA containers if no site key
+                        const recaptchaUpload = document.getElementById('recaptcha-upload');
+                        const recaptchaJson = document.getElementById('recaptcha-json');
+                        if (recaptchaUpload) recaptchaUpload.style.display = 'none';
+                        if (recaptchaJson) recaptchaJson.style.display = 'none';
+                    }
+                })
+                .catch(error => {
+                    // Hide reCAPTCHA containers on error
+                    const recaptchaUpload = document.getElementById('recaptcha-upload');
+                    const recaptchaJson = document.getElementById('recaptcha-json');
+                    if (recaptchaUpload) recaptchaUpload.style.display = 'none';
+                    if (recaptchaJson) recaptchaJson.style.display = 'none';
+                });
+        };
+        
+        // Fallback initialization in case callback doesn't fire
+        let recaptchaInitAttempts = 0;
+        const MAX_RECAPTCHA_INIT_ATTEMPTS = 50; // 5 seconds max wait
+        
+        function initializeRecaptcha() {
+            recaptchaInitAttempts++;
+            
+            if (recaptchaInitAttempts > MAX_RECAPTCHA_INIT_ATTEMPTS) {
+                return;
+            }
+            
+            if (typeof grecaptcha !== 'undefined' && typeof window.onRecaptchaLoad === 'function') {
+                // Script is loaded, trigger callback manually
+                window.onRecaptchaLoad();
+                return;
+            }
+            
+            // Wait for reCAPTCHA script to load
+            setTimeout(initializeRecaptcha, 100);
+        }
+        
+        // Initialize reCAPTCHA when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeRecaptcha);
+        } else {
+            initializeRecaptcha();
+        }
+        
+        // Tab switching
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content');
+        
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetTab = button.getAttribute('data-tab');
+                
+                // Update active tab button
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                
+                // Update active tab content
+                tabContents.forEach(content => content.classList.remove('active'));
+                document.getElementById(`${targetTab}-tab`).classList.add('active');
+                
+                // Hide message when switching tabs
+                hideMessage();
+            });
+        });
+        
+        // Monaco Editor initialization
+        let monacoEditor = null;
+        const editorContainer = document.getElementById('json-editor');
+        
+        // Initialize Monaco Editor
+        function initializeMonacoEditor() {
+            if (typeof require === 'undefined') {
+                // Retry after a short delay if require is not yet available
+                setTimeout(initializeMonacoEditor, 100);
+                return;
+            }
+            
+            require(['vs/editor/editor.main'], function () {
+                if (!editorContainer) return;
+                
+                monacoEditor = monaco.editor.create(editorContainer, {
+                    value: '',
+                    language: 'json',
+                    theme: 'vs',
+                    automaticLayout: true,
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    fontSize: 14,
+                    lineNumbers: 'on',
+                    roundedSelection: false,
+                    formatOnPaste: true,
+                    formatOnType: true,
+                    wordWrap: 'on',
+                    tabSize: 4,
+                    insertSpaces: true,
+                    detectIndentation: false
+                });
+                
+                // Validate JSON on content change
+                monacoEditor.onDidChangeModelContent(() => {
+                    const jsonText = monacoEditor.getValue().trim();
+                    if (jsonText) {
+                        try {
+                            JSON.parse(jsonText);
+                            hideJsonError();
+                            // Clear Monaco markers
+                            monaco.editor.setModelMarkers(monacoEditor.getModel(), 'json', []);
+                        } catch (error) {
+                            // Monaco will show errors in the editor itself
+                        }
+                    } else {
+                        hideJsonError();
+                    }
+                });
+            });
+        }
+        
+        // Start initialization when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeMonacoEditor);
+        } else {
+            initializeMonacoEditor();
+        }
+        
+        // JSON Editor elements
+        const loadExampleBtn = document.getElementById('load-example-btn');
+        const submitJsonBtn = document.getElementById('submit-json-btn');
+        const jsonError = document.getElementById('json-error');
+        const submitJsonBtnText = submitJsonBtn.querySelector('.btn-text');
+        const submitJsonBtnLoader = submitJsonBtn.querySelector('.btn-loader');
+        
+        // Load example JSON
+        loadExampleBtn.addEventListener('click', async () => {
+            if (!monacoEditor) {
+                showMessage('Editor is still loading. Please wait...', 'error');
+                return;
+            }
+            try {
+                const response = await fetch('/example');
+                if (!response.ok) {
+                    throw new Error('Failed to load example');
+                }
+                // Get the response as text to preserve formatting
+                const formattedJson = await response.text();
+                monacoEditor.setValue(formattedJson);
+                // Format the document using Monaco's formatter to ensure consistency
+                setTimeout(() => {
+                    monacoEditor.getAction('editor.action.formatDocument').run().catch(() => {
+                        // If format action fails, that's okay - the JSON is already formatted
+                    });
+                }, 100);
+                hideJsonError();
+                showMessage('Example JSON loaded', 'success');
+            } catch (error) {
+                showMessage('Failed to load example JSON: ' + error.message, 'error');
+            }
+        });
+        
+        // Submit JSON from editor
+        submitJsonBtn.addEventListener('click', async () => {
+            if (!monacoEditor) {
+                showMessage('Editor is still loading. Please wait...', 'error');
+                return;
+            }
+            const jsonText = monacoEditor.getValue().trim();
+            
+            if (!jsonText) {
+                showMessage('Please enter JSON or load an example', 'error');
+                return;
+            }
+            
+            // Validate JSON
+            let jsonData;
+            try {
+                jsonData = JSON.parse(jsonText);
+            } catch (error) {
+                showJsonError('Invalid JSON: ' + error.message);
+                showMessage('Invalid JSON format. Please check your syntax.', 'error');
+                return;
+            }
+            
+            // Verify reCAPTCHA
+            if (typeof grecaptcha === 'undefined') {
+                showMessage('reCAPTCHA is not loaded. Please refresh the page.', 'error');
+                return;
+            }
+            const recaptchaWidgetId = recaptchaWidgetIds.json;
+            const recaptchaResponse = recaptchaWidgetId !== null 
+                ? grecaptcha.getResponse(recaptchaWidgetId) 
+                : grecaptcha.getResponse();
+            if (!recaptchaResponse) {
+                showMessage('Please complete the reCAPTCHA verification', 'error');
+                return;
+            }
+            
+            // Reset UI
+            hideMessage();
+            hideJsonError();
+            downloadContainer.style.display = 'none';
+            submitJsonBtn.disabled = true;
+            submitJsonBtnText.style.display = 'none';
+            submitJsonBtnLoader.style.display = 'flex';
+            progressContainer.style.display = 'block';
+            
+            // Reset progress steps
+            resetProgressSteps();
+            activateStep('step-upload');
+            
+            try {
+                showMessage('Uploading JSON...', 'success');
+                activateStep('step-upload');
+                
+                const uploadResponse = await fetch('/upload-json', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ...jsonData,
+                        'g-recaptcha-response': recaptchaResponse
+                    })
+                });
+                
+                let uploadData;
+                const contentType = uploadResponse.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    try {
+                        uploadData = await uploadResponse.json();
+                    } catch (jsonError) {
+                        throw new Error('Server returned invalid JSON response.');
+                    }
+                } else {
+                    const text = await uploadResponse.text();
+                    throw new Error(`Unexpected response format: ${text.substring(0, 200)}`);
+                }
+                
+                if (!uploadResponse.ok || !uploadData.success) {
+                    const errorMsg = uploadData.error || uploadData.message || 'Failed to upload JSON';
+                    showMessage(errorMsg, 'error');
+                    resetProgressSteps();
+                    submitJsonBtn.disabled = false;
+                    submitJsonBtnText.style.display = 'inline';
+                    submitJsonBtnLoader.style.display = 'none';
+                    // Reset reCAPTCHA on error
+                    if (typeof grecaptcha !== 'undefined') {
+                        const widgetId = recaptchaWidgetIds.json;
+                        if (widgetId !== null) {
+                            grecaptcha.reset(widgetId);
+                        } else {
+                            grecaptcha.reset();
+                        }
+                    }
+                    return;
+                }
+                
+                const jobId = uploadData.job_id;
+                if (!jobId) {
+                    throw new Error('No job ID received from server');
+                }
+                
+                showMessage('JSON uploaded. Processing in background...', 'success');
+                activateStep('step-process');
+                
+                // Poll for status
+                await pollJobStatus(jobId);
+                
+            } catch (error) {
+                let errorMessage = 'An error occurred during processing';
+                if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                    errorMessage = 'Network error: Unable to connect to the server. Please check your connection and try again.';
+                } else {
+                    errorMessage = 'Error: ' + error.message;
+                }
+                
+                showMessage(errorMessage, 'error');
+                resetProgressSteps();
+                // Reset reCAPTCHA on error
+                if (typeof grecaptcha !== 'undefined') {
+                    const widgetId = recaptchaWidgetIds.json;
+                    if (widgetId !== null) {
+                        grecaptcha.reset(widgetId);
+                    } else {
+                        grecaptcha.reset();
+                    }
+                }
+            } finally {
+                submitJsonBtn.disabled = false;
+                submitJsonBtnText.style.display = 'inline';
+                submitJsonBtnLoader.style.display = 'none';
+            }
+        });
+        
+        function showJsonError(message) {
+            jsonError.textContent = message;
+            jsonError.style.display = 'block';
+        }
+        
+        function hideJsonError() {
+            jsonError.style.display = 'none';
+        }
+        
+        // File upload form elements
+        const form = document.getElementById('upload-form');
+        const fileInput = document.getElementById('file-input');
+        const fileName = document.getElementById('file-name');
+        const fileLabel = document.querySelector('.file-label');
+        const submitBtn = document.getElementById('submit-btn');
+        const btnText = submitBtn.querySelector('.btn-text');
+        const btnLoader = submitBtn.querySelector('.btn-loader');
+        const messageContainer = document.getElementById('message-container');
+        const progressContainer = document.getElementById('progress-container');
+        const downloadContainer = document.getElementById('download-container');
+
+        // Schema tab: show a skeleton + load example from server
+        const schemaSkeletonEl = document.getElementById('schema-skeleton');
+        const schemaExampleEl = document.getElementById('schema-example');
+        if (schemaSkeletonEl) {
+            schemaSkeletonEl.textContent = JSON.stringify({
+                "subject_size": 0,
+                "object_size": 0,
+                "environment_size": 0,
+                "subject_attributes_count": 0,
+                "object_attributes_count": 0,
+                "environment_attributes_count": 0,
+                "subject_attributes_values": [],
+                "object_attributes_values": [],
+                "environment_attributes_values": [],
+                "subject_distributions": [
+                    { "distribution": "N", "mean": 0, "variance": 0 },
+                    { "distribution": "P", "lambda": 0 },
+                    { "distribution": "U" }
+                ],
+                "object_distributions": [
+                    { "distribution": "N", "mean": 0, "variance": 0 },
+                    { "distribution": "P", "lambda": 0 },
+                    { "distribution": "U" }
+                ],
+                "environment_distributions": [
+                    { "distribution": "N", "mean": 0, "variance": 0 },
+                    { "distribution": "P", "lambda": 0 },
+                    { "distribution": "U" }
+                ],
+                "rules_count": 0
+            }, null, 4);
+        }
+        if (schemaExampleEl) {
+            fetch('/example')
+                .then(r => {
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    return r.text();
+                })
+                .then(text => {
+                    schemaExampleEl.textContent = text;
+                })
+                .catch(err => {
+                    schemaExampleEl.textContent = 'Failed to load example: ' + err.message;
+                });
+        }
+        
+        // Update file name display
+        fileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                fileName.textContent = file.name;
+                fileName.classList.add('has-file');
+                hideMessage();
+            } else {
+                fileName.textContent = 'Choose a JSON file';
+                fileName.classList.remove('has-file');
+            }
+        });
+
+        // Drag & drop for file upload (reuses the existing input + submit flow)
+        if (fileLabel && fileInput) {
+            const preventDefaults = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            };
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                fileLabel.addEventListener(eventName, preventDefaults, false);
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                fileLabel.addEventListener(eventName, () => fileLabel.classList.add('dragover'), false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                fileLabel.addEventListener(eventName, () => fileLabel.classList.remove('dragover'), false);
+            });
+
+            fileLabel.addEventListener('drop', (e) => {
+                const files = e.dataTransfer?.files;
+                if (!files || files.length === 0) return;
+
+                const file = files[0];
+                if (!file.name.toLowerCase().endsWith('.json')) {
+                    showMessage('Please drop a JSON file (.json)', 'error');
+                    return;
+                }
+
+                // Assign dropped file to the existing file input (supported in modern browsers)
+                try {
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    fileInput.files = dt.files;
+                } catch (err) {
+                    // If assignment fails, the user can still click to select manually
+                }
+
+                fileName.textContent = file.name;
+                fileName.classList.add('has-file');
+                hideMessage();
+            }, false);
+        }
+        
+        // Form submission
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const file = fileInput.files[0];
+            if (!file) {
+                showMessage('Please select a file first', 'error');
+                return;
+            }
+            
+            // Validate file type
+            if (!file.name.toLowerCase().endsWith('.json')) {
+                showMessage('Please select a JSON file (.json)', 'error');
+                return;
+            }
+            
+            // Validate file size (e.g., max 10MB)
+            const maxSize = 10 * 1024 * 1024; // 10MB
+            if (file.size > maxSize) {
+                showMessage('File size exceeds 10MB limit. Please upload a smaller file.', 'error');
+                return;
+            }
+            
+            // Verify reCAPTCHA
+            if (typeof grecaptcha === 'undefined') {
+                showMessage('reCAPTCHA is not loaded. Please refresh the page.', 'error');
+                return;
+            }
+            const recaptchaWidgetId = recaptchaWidgetIds.upload;
+            const recaptchaResponse = recaptchaWidgetId !== null 
+                ? grecaptcha.getResponse(recaptchaWidgetId) 
+                : grecaptcha.getResponse();
+            if (!recaptchaResponse) {
+                showMessage('Please complete the reCAPTCHA verification', 'error');
+                return;
+            }
+            
+            // Reset UI
+            hideMessage();
+            downloadContainer.style.display = 'none';
+            submitBtn.disabled = true;
+            btnText.style.display = 'none';
+            btnLoader.style.display = 'flex';
+            progressContainer.style.display = 'block';
+            
+            // Reset progress steps
+            resetProgressSteps();
+            activateStep('step-upload');
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('g-recaptcha-response', recaptchaResponse);
+            
+            try {
+                // Upload file
+                activateStep('step-upload');
+                showMessage('Uploading file...', 'success');
+                
+                const uploadResponse = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                let uploadData;
+                const contentType = uploadResponse.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    try {
+                        uploadData = await uploadResponse.json();
+                    } catch (jsonError) {
+                        // If JSON parsing fails, the body might still be readable
+                        // but we can't read it again, so show a generic error
+                        throw new Error('Server returned invalid JSON response. Please check the server logs.');
+                    }
+                } else {
+                    // Read as text for non-JSON responses
+                    const text = await uploadResponse.text();
+                    throw new Error(`Unexpected response format from server: ${text.substring(0, 200)}`);
+                }
+                
+                if (!uploadResponse.ok || !uploadData.success) {
+                    const errorMsg = uploadData.error || uploadData.message || 'Failed to upload file';
+                    showMessage(errorMsg, 'error');
+                    resetProgressSteps();
+                    submitBtn.disabled = false;
+                    btnText.style.display = 'inline';
+                    btnLoader.style.display = 'none';
+                    // Reset reCAPTCHA on error
+                    if (typeof grecaptcha !== 'undefined') {
+                        const widgetId = recaptchaWidgetIds.upload;
+                        if (widgetId !== null) {
+                            grecaptcha.reset(widgetId);
+                        } else {
+                            grecaptcha.reset();
+                        }
+                    }
+                    return;
+                }
+                
+                // Start polling for job status
+                const jobId = uploadData.job_id;
+                if (!jobId) {
+                    throw new Error('No job ID received from server');
+                }
+                
+                showMessage('File uploaded. Processing in background...', 'success');
+                activateStep('step-process');
+                
+                // Poll for status
+                await pollJobStatus(jobId);
+                
+            } catch (error) {
+                let errorMessage = 'An error occurred during processing';
+                if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                    errorMessage = 'Network error: Unable to connect to the server. Please check your connection and try again.';
+                } else {
+                    errorMessage = 'Error: ' + error.message;
+                }
+                
+                showMessage(errorMessage, 'error');
+                resetProgressSteps();
+                // Reset reCAPTCHA on error
+                if (typeof grecaptcha !== 'undefined') {
+                    const widgetId = recaptchaWidgetIds.upload;
+                    if (widgetId !== null) {
+                        grecaptcha.reset(widgetId);
+                    } else {
+                        grecaptcha.reset();
+                    }
+                }
+            } finally {
+                submitBtn.disabled = false;
+                btnText.style.display = 'inline';
+                btnLoader.style.display = 'none';
+            }
+        });
+        
+        async function pollJobStatus(jobId) {
+            const maxAttempts = 3600; // Poll for up to 1 hour (1 second intervals)
+            let attempts = 0;
+            let pollInterval;
+            
+            return new Promise((resolve, reject) => {
+                pollInterval = setInterval(async () => {
+                    attempts++;
+                    
+                    if (attempts > maxAttempts) {
+                        clearInterval(pollInterval);
+                        showMessage('Processing is taking longer than expected. Please refresh the page to check status.', 'error');
+                        reject(new Error('Polling timeout'));
+                        return;
+                    }
+                    
+                    try {
+                        const response = await fetch(`/status/${jobId}`);
+                        
+                        let data;
+                        const contentType = response.headers.get('content-type');
+                        if (contentType && contentType.includes('application/json')) {
+                            try {
+                                data = await response.json();
+                            } catch (jsonError) {
+                                clearInterval(pollInterval);
+                                const text = await response.text();
+                                showMessage('Invalid response from server', 'error');
+                                resetProgressSteps();
+                                reject(new Error('Invalid JSON response'));
+                                return;
+                            }
+                        } else {
+                            clearInterval(pollInterval);
+                            const text = await response.text();
+                            showMessage('Unexpected response format from server', 'error');
+                            resetProgressSteps();
+                            reject(new Error('Non-JSON response'));
+                            return;
+                        }
+                        
+                        if (!response.ok || !data.success) {
+                            clearInterval(pollInterval);
+                            const errorMsg = data.error || data.message || 'Failed to get job status';
+                            showMessage(errorMsg, 'error');
+                            resetProgressSteps();
+                            reject(new Error(errorMsg));
+                            return;
+                        }
+                        
+                        // Update progress based on status
+                        const status = data.status;
+                        if (status === 'processing') {
+                            activateStep('step-process');
+                        } else if (status === 'generating') {
+                            activateStep('step-generate');
+                        } else if (status === 'completed') {
+                            clearInterval(pollInterval);
+                            activateStep('step-complete');
+                            showMessage(data.message || 'Files generated successfully!', 'success');
+                            downloadContainer.style.display = 'block';
+                            resolve(data);
+                        } else if (status === 'failed') {
+                            clearInterval(pollInterval);
+                            const errorMsg = data.error || 'Processing failed';
+                            showMessage(errorMsg, 'error');
+                            resetProgressSteps();
+                            reject(new Error(errorMsg));
+                        }
+                        // If status is 'pending', continue polling
+                        
+                    } catch (error) {
+                        clearInterval(pollInterval);
+                        showMessage('Error checking job status: ' + error.message, 'error');
+                        reject(error);
+                    }
+                }, 1000); // Poll every second
+            });
+        }
+        
+        function showMessage(message, type) {
+            // Ensure message is a string, not an object
+            let messageText = message;
+            if (typeof message === 'object') {
+                // If it's an object, try to extract error or message field
+                messageText = message.error || message.message || JSON.stringify(message);
+                // If it looks like raw JSON, show a user-friendly message instead
+                if (messageText.startsWith('{') || messageText.startsWith('[')) {
+                    messageText = 'An error occurred. Please try again or contact support.';
+                }
+            }
+            messageContainer.textContent = String(messageText);
+            messageContainer.className = `message-container message-${type}`;
+            messageContainer.style.display = 'block';
+        }
+        
+        function hideMessage() {
+            messageContainer.style.display = 'none';
+        }
+        
+        function resetProgressSteps() {
+            document.querySelectorAll('.step').forEach(step => {
+                step.classList.remove('active', 'completed');
+            });
+        }
+        
+        function activateStep(stepId) {
+            const step = document.getElementById(stepId);
+            if (step) {
+                // Mark previous steps as completed
+                const allSteps = document.querySelectorAll('.step');
+                allSteps.forEach(s => {
+                    if (s.id === stepId) {
+                        s.classList.add('active');
+                    } else if (s.id !== stepId && !s.classList.contains('completed')) {
+                        const currentIndex = Array.from(allSteps).indexOf(s);
+                        const activeIndex = Array.from(allSteps).indexOf(step);
+                        if (currentIndex < activeIndex) {
+                            s.classList.add('completed');
+                            s.classList.remove('active');
+                        }
+                    }
+                });
+            }
+        }
+    </script>
 </body>
 </html>
