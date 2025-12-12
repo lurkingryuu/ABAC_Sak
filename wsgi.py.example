@@ -12,9 +12,14 @@ if path not in sys.path:
 # Change to project directory
 os.chdir(path)
 
+# Set environment variables (if needed)
+# Uncomment and set your reCAPTCHA keys:
+# os.environ['RECAPTCHA_SITE_KEY'] = 'your-site-key-here'
+# os.environ['RECAPTCHA_SECRET_KEY'] = 'your-secret-key-here'
+
+# Optional: Set other environment variables
+# os.environ['FLASK_ENV'] = 'production'
+
 # Import your Flask app
 from app import app as application
-
-# Optional: Set environment variables if needed
-# os.environ['FLASK_ENV'] = 'production'
 

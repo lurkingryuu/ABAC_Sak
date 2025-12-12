@@ -202,26 +202,20 @@ def get_recaptcha_site_key():
 
 @app.route('/example', methods=['GET'])
 def get_example_json():
-    """Return example JSON format"""
-    example_json = {
-        "subject_size": 10,
-        "object_size": 15,
-        "environment_size": 5,
-        "subject_attributes_count": 3,
-        "object_attributes_count": 4,
-        "environment_attributes_count": 2,
-        "subject_attributes_values": [3, 4, 5],
-        "object_attributes_values": [2, 3, 4, 5],
-        "environment_attributes_values": [1, 2],
-        "subject_mean": 3,
-        "subject_variance": 1,
-        "object_mean": 4,
-        "object_variance": 1.5,
-        "environment_mean": 2,
-        "environment_variance": 0.5,
-        "rules_count": 20
-    }
-    # Return as formatted JSON string to ensure consistent formatting
+    """Return example JSON (dataset/input5.json)"""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    example_path = os.path.join(base_dir, 'dataset', 'input5.json')
+
+    try:
+        with open(example_path, 'r', encoding='utf-8') as f:
+            example_json = json.load(f)
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'Failed to load example JSON: {str(e)}'
+        }), 500
+
+    # Return as formatted JSON string to preserve consistent formatting
     formatted_json = json.dumps(example_json, indent=4, ensure_ascii=False)
     headers = {'Content-Type': 'application/json; charset=utf-8'}
     return formatted_json, 200, headers

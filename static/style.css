@@ -21,6 +21,11 @@ body {
     border-radius: 16px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     text-align: center;
+    /* Keep the card within the viewport; scroll inside tabs instead of stretching */
+    max-height: calc(100vh - 40px); /* body padding is 20px top/bottom */
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .header {
@@ -90,6 +95,12 @@ h1 {
 .file-label:hover {
     border-color: #667eea;
     background-color: #f0f0ff;
+}
+
+.file-label.dragover {
+    border-color: #667eea;
+    background-color: #f0f0ff;
+    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
 }
 
 .file-label input[type="file"] {
@@ -285,6 +296,7 @@ h1 {
     gap: 8px;
     margin-bottom: 24px;
     border-bottom: 2px solid #e0e0e0;
+    flex: 0 0 auto;
 }
 
 .tab-btn {
@@ -312,6 +324,10 @@ h1 {
 
 .tab-content {
     display: none;
+    /* Allow tab content to scroll without growing the outer card */
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0; /* required for overflow in flex children */
 }
 
 .tab-content.active {
@@ -321,6 +337,59 @@ h1 {
 /* JSON Editor */
 .editor-wrapper {
     margin-bottom: 24px;
+}
+
+.schema-wrapper {
+    text-align: left;
+    margin-bottom: 10px;
+}
+
+.schema-title {
+    margin: 0 0 6px 0;
+    font-size: 18px;
+    color: #333;
+}
+
+.schema-subtitle {
+    margin: 0 0 16px 0;
+    font-size: 13px;
+    color: #666;
+}
+
+.schema-section {
+    margin: 14px 0;
+}
+
+.schema-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 8px;
+}
+
+.schema-list {
+    margin: 0;
+    padding-left: 18px;
+    color: #444;
+    font-size: 13px;
+}
+
+.schema-note {
+    font-size: 13px;
+    color: #444;
+    margin-bottom: 10px;
+}
+
+.schema-pre {
+    background: #f7f7fb;
+    border: 1px solid #e6e6ef;
+    border-radius: 8px;
+    padding: 12px;
+    overflow: auto;
+    font-size: 12px;
+    line-height: 1.4;
+    margin: 0;
+    white-space: pre;
 }
 
 .editor-header {
@@ -346,7 +415,10 @@ h1 {
 
 .json-editor-container {
     width: 100%;
-    min-height: 400px;
+    /* Constrain editor height so the card stays proportionate */
+    height: 45vh;
+    min-height: 260px;
+    max-height: 520px;
     border: 2px solid #ddd;
     border-radius: 8px;
     overflow: hidden;

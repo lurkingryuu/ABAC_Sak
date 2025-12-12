@@ -25,6 +25,7 @@
         <div class="tabs">
             <button class="tab-btn active" data-tab="upload">Upload File</button>
             <button class="tab-btn" data-tab="editor">Edit JSON</button>
+            <button class="tab-btn" data-tab="schema">Schema / Format</button>
         </div>
         
         <!-- Upload File Tab -->
@@ -61,7 +62,6 @@
             <div class="editor-wrapper">
                 <div class="editor-header">
                     <button type="button" id="load-example-btn" class="btn btn-secondary">Load Example</button>
-                    <button type="button" id="format-json-btn" class="btn btn-secondary">Format JSON</button>
                 </div>
                 <div id="json-editor" class="json-editor-container"></div>
                 <div class="editor-footer">
@@ -77,6 +77,42 @@
                             Processing...
                         </span>
                     </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Schema / Format Tab -->
+        <div id="schema-tab" class="tab-content">
+            <div class="schema-wrapper">
+                <h2 class="schema-title">JSON Schema / Format</h2>
+                <p class="schema-subtitle">
+                    Use this format for uploads or the editor. The example below is loaded from the server.
+                </p>
+
+                <div class="schema-section">
+                    <div class="schema-section-title">Required top-level fields</div>
+                    <ul class="schema-list">
+                        <li><code>subject_size</code>, <code>object_size</code>, <code>environment_size</code> (number)</li>
+                        <li><code>subject_attributes_count</code>, <code>object_attributes_count</code>, <code>environment_attributes_count</code> (number)</li>
+                        <li><code>subject_attributes_values</code>, <code>object_attributes_values</code>, <code>environment_attributes_values</code> (array of numbers)</li>
+                        <li><code>subject_distributions</code>, <code>object_distributions</code>, <code>environment_distributions</code> (array of objects)</li>
+                        <li><code>rules_count</code> (number)</li>
+                    </ul>
+                </div>
+
+                <div class="schema-section">
+                    <div class="schema-section-title">Distributions format</div>
+                    <div class="schema-note">
+                        Each item supports a <code>distribution</code> code like <code>"N"</code> (Normal),
+                        <code>"P"</code> (Poisson), <code>"U"</code> (Uniform). Some distributions may include
+                        parameters like <code>mean</code>/<code>variance</code> or <code>lambda</code>.
+                    </div>
+                    <pre id="schema-skeleton" class="schema-pre"></pre>
+                </div>
+
+                <div class="schema-section">
+                    <div class="schema-section-title">Example JSON</div>
+                    <pre id="schema-example" class="schema-pre">Loading example…</pre>
                 </div>
             </div>
         </div>
@@ -283,7 +319,6 @@
         
         // JSON Editor elements
         const loadExampleBtn = document.getElementById('load-example-btn');
-        const formatJsonBtn = document.getElementById('format-json-btn');
         const submitJsonBtn = document.getElementById('submit-json-btn');
         const jsonError = document.getElementById('json-error');
         const submitJsonBtnText = submitJsonBtn.querySelector('.btn-text');
@@ -313,30 +348,6 @@
                 showMessage('Example JSON loaded', 'success');
             } catch (error) {
                 showMessage('Failed to load example JSON: ' + error.message, 'error');
-            }
-        });
-        
-        // Format JSON
-        formatJsonBtn.addEventListener('click', () => {
-            if (!monacoEditor) {
-                showMessage('Editor is still loading. Please wait...', 'error');
-                return;
-            }
-            try {
-                const jsonText = monacoEditor.getValue().trim();
-                if (!jsonText) {
-                    showMessage('Editor is empty', 'error');
-                    return;
-                }
-                const parsed = JSON.parse(jsonText);
-                monacoEditor.setValue(JSON.stringify(parsed, null, 4));
-                // Trigger format action
-                monacoEditor.getAction('editor.action.formatDocument').run();
-                hideJsonError();
-                showMessage('JSON formatted successfully', 'success');
-            } catch (error) {
-                showJsonError('Invalid JSON: ' + error.message);
-                showMessage('Invalid JSON format', 'error');
             }
         });
         
@@ -487,12 +498,59 @@
         const form = document.getElementById('upload-form');
         const fileInput = document.getElementById('file-input');
         const fileName = document.getElementById('file-name');
+        const fileLabel = document.querySelector('.file-label');
         const submitBtn = document.getElementById('submit-btn');
         const btnText = submitBtn.querySelector('.btn-text');
         const btnLoader = submitBtn.querySelector('.btn-loader');
         const messageContainer = document.getElementById('message-container');
         const progressContainer = document.getElementById('progress-container');
         const downloadContainer = document.getElementById('download-container');
+
+        // Schema tab: show a skeleton + load example from server
+        const schemaSkeletonEl = document.getElementById('schema-skeleton');
+        const schemaExampleEl = document.getElementById('schema-example');
+        if (schemaSkeletonEl) {
+            schemaSkeletonEl.textContent = JSON.stringify({
+                "subject_size": 0,
+                "object_size": 0,
+                "environment_size": 0,
+                "subject_attributes_count": 0,
+                "object_attributes_count": 0,
+                "environment_attributes_count": 0,
+                "subject_attributes_values": [],
+                "object_attributes_values": [],
+                "environment_attributes_values": [],
+                "subject_distributions": [
+                    { "distribution": "N", "mean": 0, "variance": 0 },
+                    { "distribution": "P", "lambda": 0 },
+                    { "distribution": "U" }
+                ],
+                "object_distributions": [
+                    { "distribution": "N", "mean": 0, "variance": 0 },
+                    { "distribution": "P", "lambda": 0 },
+                    { "distribution": "U" }
+                ],
+                "environment_distributions": [
+                    { "distribution": "N", "mean": 0, "variance": 0 },
+                    { "distribution": "P", "lambda": 0 },
+                    { "distribution": "U" }
+                ],
+                "rules_count": 0
+            }, null, 4);
+        }
+        if (schemaExampleEl) {
+            fetch('/example')
+                .then(r => {
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    return r.text();
+                })
+                .then(text => {
+                    schemaExampleEl.textContent = text;
+                })
+                .catch(err => {
+                    schemaExampleEl.textContent = 'Failed to load example: ' + err.message;
+                });
+        }
         
         // Update file name display
         fileInput.addEventListener('change', function(e) {
@@ -506,6 +564,50 @@
                 fileName.classList.remove('has-file');
             }
         });
+
+        // Drag & drop for file upload (reuses the existing input + submit flow)
+        if (fileLabel && fileInput) {
+            const preventDefaults = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            };
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                fileLabel.addEventListener(eventName, preventDefaults, false);
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                fileLabel.addEventListener(eventName, () => fileLabel.classList.add('dragover'), false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                fileLabel.addEventListener(eventName, () => fileLabel.classList.remove('dragover'), false);
+            });
+
+            fileLabel.addEventListener('drop', (e) => {
+                const files = e.dataTransfer?.files;
+                if (!files || files.length === 0) return;
+
+                const file = files[0];
+                if (!file.name.toLowerCase().endsWith('.json')) {
+                    showMessage('Please drop a JSON file (.json)', 'error');
+                    return;
+                }
+
+                // Assign dropped file to the existing file input (supported in modern browsers)
+                try {
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    fileInput.files = dt.files;
+                } catch (err) {
+                    // If assignment fails, the user can still click to select manually
+                }
+
+                fileName.textContent = file.name;
+                fileName.classList.add('has-file');
+                hideMessage();
+            }, false);
+        }
         
         // Form submission
         form.addEventListener('submit', async function(e) {
