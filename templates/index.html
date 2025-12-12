@@ -15,8 +15,8 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Upload Input JSON</h1>
-            <p class="subtitle">Upload your JSON file or edit it directly to generate access control outputs</p>
+            <h1>SIMA: ABAC Simulator</h1>
+            <p class="subtitle">Upload your JSON file or edit it directly to generate ABAC rules and outputs</p>
         </div>
         
         <div id="message-container" class="message-container" style="display: none;"></div>
@@ -148,7 +148,7 @@
                 Download Outputs Bundle
             </a>
 
-            <div class="dropdown">
+            <div class="dropdown" style="display: none;">
                 <button type="button" class="other-downloads-toggle" aria-haspopup="true" aria-expanded="false">
                     Other downloads
                     <svg class="dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -160,7 +160,6 @@
                     <a href="/download?file=rules_temp.txt" download>Download rules_temp.txt</a>
                     <a href="/download?file=ACM.txt" download>Download ACM.txt</a>
                     <a href="/download?file=access_data.txt" download>Download access_data.txt</a>
-                    <a href="/download/error-summary" download>Download Error Summary</a>
                 </div>
             </div>
         </div>

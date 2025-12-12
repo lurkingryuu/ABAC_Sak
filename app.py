@@ -164,7 +164,6 @@ def process_file_background(job_id):
         )
 
         # NOTE: plot/error-summary generation is intentionally NOT run here.
-        # Trigger it on-demand instead of during every upload.
         job_manager.update_job(job_id, JobStatus.COMPLETED, progress=100)
 
     except subprocess.TimeoutExpired:
@@ -407,7 +406,6 @@ def download_outputs():
         'rules_temp.txt',
         'ACM.txt',
         'access_data.txt',
-        'error_summary.json',
     }
     if requested not in allowed_files:
         return "Requested file is not available.", 404
@@ -423,27 +421,11 @@ def download_outputs():
     return send_from_directory(app.config['OUTPUT_FOLDER'], requested)
 
 
-@app.route('/download/error-summary')
-def download_error_summary():
-    """Download the error summary JSON produced by access_control/plot.py."""
-    file_path = os.path.join(app.config['OUTPUT_FOLDER'], 'error_summary.json')
-    if not os.path.exists(file_path):
-        return (
-            "Error: error_summary.json not found. "
-            "Ensure the job completed and plot generation ran successfully.",
-            404,
-        )
-    return send_from_directory(
-        app.config['OUTPUT_FOLDER'], 'error_summary.json'
-    )
-
-
 @app.route('/download/bundle.zip')
 def download_bundle():
     """
     Download a zip containing:
-      - outputs/* (output.json, rules_temp.txt, ACM.txt, access_data.txt,
-        error_summary.json if present)
+      - outputs/* (output.json, rules_temp.txt, ACM.txt, access_data.txt)
     """
     base_dir = os.path.dirname(os.path.abspath(__file__))
     outputs_dir = os.path.join(base_dir, app.config['OUTPUT_FOLDER'])
@@ -453,11 +435,18 @@ def download_bundle():
         mem, mode='w', compression=zipfile.ZIP_DEFLATED
     ) as zf:
         if os.path.isdir(outputs_dir):
-            for root, _, files in os.walk(outputs_dir):
-                for name in files:
-                    abs_path = os.path.join(root, name)
-                    rel_path = os.path.relpath(abs_path, base_dir)
-                    zf.write(abs_path, rel_path)
+            allowed_files = {
+                'output.json',
+                'rules_temp.txt',
+                'ACM.txt',
+                'access_data.txt',
+            }
+            for name in sorted(allowed_files):
+                abs_path = os.path.join(outputs_dir, name)
+                if not os.path.exists(abs_path):
+                    continue
+                rel_path = os.path.relpath(abs_path, base_dir)
+                zf.write(abs_path, rel_path)
 
     mem.seek(0)
     return send_file(
