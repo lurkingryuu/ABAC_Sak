@@ -100,8 +100,14 @@ def poisson_pmf(lam, k):
     """Return Poisson PMF P(K=k) for integer k >= 0."""
     return (lam**k) * exp(-lam) / factorial(k)
 
-def sample_truncated_normal(mean=0.5, sigma=0.1, low=0.0, high=1.0):
-    """Sample a value from a Normal(mean, sigma^2) truncated to [low, high]."""
+# def sample_truncated_normal(mean=0.5, sigma=0.1, low=0.0, high=1.0):
+#     """Sample a value from a Normal(mean, sigma^2) truncated to [low, high]."""
+#     a, b = (low - mean) / sigma, (high - mean) / sigma
+#     return truncnorm.rvs(a, b, loc=mean, scale=sigma)
+
+def sample_truncated_normal(mean, variance, low, high):
+    """Sample a value from Normal(mean, variance) truncated to [low, high]."""
+    sigma = np.sqrt(variance)
     a, b = (low - mean) / sigma, (high - mean) / sigma
     return truncnorm.rvs(a, b, loc=mean, scale=sigma)
 
@@ -126,16 +132,20 @@ def assign_values(attribute_values, distributions, entity_count,
 
             if dist["distribution"] == "N":
                 # use defaults unless user provided overrides
-                # mean = dist.get("mean", 0.5)
-                mean=0.5
+                mean = dist.get("mean", (n+1)/2.0)
+                # mean=0.5
                 # variance = dist.get("variance", 0.01)
-                variance=0.01
-                sigma = np.sqrt(variance)
-                x = sample_truncated_normal(mean=mean, sigma=sigma, low=0.0, high=1.0)
+                variance = dist.get("variance", (n/6.0)**2)
+
+                # variance=0.01
+                # sigma = np.sqrt(variance)
+                x = sample_truncated_normal(mean=mean, variance=variance, low=0.0, high=float(n))
 
                 # map continuous x in [0,1] to one of n equal bins [0,1/n),[1/n,2/n),...
-                idx = int(x * n)
-                if idx == n:    # rare edge if x == 1.0
+                # map x ∈ [0,n] to bin k: choose a_k if x ∈ [k-1, k)
+                # 0-based index: idx = floor(x), then clamp to [0, n-1]
+                idx = int(x)
+                if idx >= n:    # rare edge if x == 1.0
                     idx = n - 1
                 entity_values[key].append(values[idx])
 
@@ -213,6 +223,8 @@ with open(os.path.join(OUTPUT_FOLDER, "rules_temp.txt"), "w") as file:
         file.write(rule + "\n")
 
 print("Output generated successfully.")
+
+
 
 
 # Initialize the Access Control Matrix (ACM)
