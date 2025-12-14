@@ -847,12 +847,17 @@
                             clearInterval(pollInterval);
                             activateStep('step-complete');
                             showMessage(data.message || 'Files generated successfully!', 'success');
-                            downloadContainer.style.display = 'block';
 
                             // Wire per-job download links
                             const bundleLink = document.getElementById('download-bundle-link');
                             if (bundleLink) {
                                 bundleLink.href = `/download/${jobId}/bundle.zip`;
+                                // Only make the container interactive after href is initialized.
+                                downloadContainer.style.display = 'block';
+                            } else {
+                                // If the link isn't present for some reason, keep the container hidden
+                                // to avoid presenting a non-functional "#" navigation target.
+                                downloadContainer.style.display = 'none';
                             }
                             /*
                             const dropdown = downloadContainer.querySelector('.dropdown');
