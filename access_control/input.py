@@ -3,6 +3,9 @@ import configparser
 import json
 import os
 
+ENV_INPUT_JSON = "ABAC_INPUT_JSON"
+ENV_CONFIG_INI = "ABAC_CONFIG_INI"
+
 def write_config_file(n1, n2, n3, n4, n5, n6, subject_attributes, object_attributes, environment_attributes, N):
     """
     Write the configuration to config.ini.
@@ -43,8 +46,11 @@ def write_config_file(n1, n2, n3, n4, n5, n6, subject_attributes, object_attribu
     # Write rules count
     config['RULES'] = {'rules_count': str(N)}
     
-    # Write config.ini inside the access_control directory
-    config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
+    # Write config.ini: default is access_control/config.ini, but can be overridden per-job.
+    config_path = os.environ.get(ENV_CONFIG_INI) or os.path.join(
+        os.path.dirname(__file__), 'config.ini'
+    )
+    os.makedirs(os.path.dirname(os.path.abspath(config_path)), exist_ok=True)
     with open(config_path, 'w') as configfile:
         config.write(configfile)
 
@@ -57,8 +63,10 @@ def read_input_json(file_path):
         return data
 
 if __name__ == "__main__":
-    # Read input.json from the uploads directory
-    input_path = os.path.join(os.path.dirname(__file__), '../uploads/input.json')
+    # Read input.json: default is ../uploads/input.json, but can be overridden per-job.
+    input_path = os.environ.get(ENV_INPUT_JSON) or os.path.join(
+        os.path.dirname(__file__), '../uploads/input.json'
+    )
     input_data = read_input_json(input_path)
     
     # Extract values from JSON

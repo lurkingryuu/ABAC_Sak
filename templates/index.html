@@ -139,7 +139,7 @@
         </div>
         
         <div id="download-container" class="download-container" style="display: none;">
-            <a href="/download/bundle.zip" id="download-bundle-link" class="btn btn-success" download>
+            <a href="#" id="download-bundle-link" class="btn btn-success" download>
                 <svg class="download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                     <polyline points="7 10 12 15 17 10"></polyline>
@@ -148,7 +148,7 @@
                 Download Outputs Bundle
             </a>
 
-            <div class="dropdown" style="display: none;">
+            <!-- <div class="dropdown" style="display: none;">
                 <button type="button" class="other-downloads-toggle" aria-haspopup="true" aria-expanded="false">
                     Other downloads
                     <svg class="dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -156,12 +156,12 @@
                     </svg>
                 </button>
                 <div class="dropdown-content">
-                    <a href="/download?file=output.json" download>Download output.json</a>
-                    <a href="/download?file=rules_temp.txt" download>Download rules_temp.txt</a>
-                    <a href="/download?file=ACM.txt" download>Download ACM.txt</a>
-                    <a href="/download?file=access_data.txt" download>Download access_data.txt</a>
+                    <a href="#" data-output-file="output.json" download>Download output.json</a>
+                    <a href="#" data-output-file="rules_temp.txt" download>Download rules_temp.txt</a>
+                    <a href="#" data-output-file="ACM.txt" download>Download ACM.txt</a>
+                    <a href="#" data-output-file="access_data.txt" download>Download access_data.txt</a>
                 </div>
-            </div>
+            </div>-->
         </div>
     </div>
     
@@ -848,6 +848,22 @@
                             activateStep('step-complete');
                             showMessage(data.message || 'Files generated successfully!', 'success');
                             downloadContainer.style.display = 'block';
+
+                            // Wire per-job download links
+                            const bundleLink = document.getElementById('download-bundle-link');
+                            if (bundleLink) {
+                                bundleLink.href = `/download/${jobId}/bundle.zip`;
+                            }
+                            /*
+                            const dropdown = downloadContainer.querySelector('.dropdown');
+                            if (dropdown) {
+                                dropdown.style.display = 'block';
+                                dropdown.querySelectorAll('a[data-output-file]').forEach((a) => {
+                                    const file = a.getAttribute('data-output-file');
+                                    if (file) a.href = `/download/${jobId}?file=${encodeURIComponent(file)}`;
+                                });
+                            }
+                            */
                             resolve(data);
                         } else if (status === 'failed') {
                             clearInterval(pollInterval);

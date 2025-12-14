@@ -13,8 +13,13 @@ from scipy.stats import norm
 
 # --- Paths ---
 BASE_DIR = os.path.dirname(__file__)
-OUTPUT_JSON_PATH = os.path.join(BASE_DIR, '../outputs/output.json')
-CONFIG_PATH = os.path.join(BASE_DIR, 'config.ini')
+ENV_CONFIG_INI = "ABAC_CONFIG_INI"
+ENV_OUTPUT_DIR = "ABAC_OUTPUT_DIR"
+
+_out_dir = os.environ.get(ENV_OUTPUT_DIR) or os.path.join(BASE_DIR, '../outputs')
+OUTPUT_JSON_PATH = os.path.join(_out_dir, 'output.json')
+
+CONFIG_PATH = os.environ.get(ENV_CONFIG_INI) or os.path.join(BASE_DIR, 'config.ini')
 PLOTS_FOLDER = os.path.join(BASE_DIR, '../plots')
 os.makedirs(PLOTS_FOLDER, exist_ok=True)
 

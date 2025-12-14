@@ -1,7 +1,14 @@
 import configparser
+import os
+
+ENV_CONFIG_INI = "ABAC_CONFIG_INI"
 
 config = configparser.ConfigParser()
-config.read(r"config.ini")
+
+# Prefer an explicit config path (per-job) via env, otherwise fall back to access_control/config.ini.
+_default_config_path = os.path.join(os.path.dirname(__file__), "config.ini")
+_config_path = os.environ.get(ENV_CONFIG_INI) or _default_config_path
+config.read(_config_path)
 
 n1 = int(config["NUMBERS"]["n1"])
 n2 = int(config["NUMBERS"]["n2"])
