@@ -172,7 +172,19 @@ def assign_values(attribute_values, distributions, entity_count,
 
             elif dist["distribution"] == "U":
                 # Uniform distribution
-                idx = np.random.choice(np.arange(n))
+                low_idx = dist.get("low", 0)
+                high_idx = dist.get("high", n)
+                
+                # Ensure integer bounds and clamp
+                low_idx = max(0, int(low_idx))
+                high_idx = min(n, int(high_idx))
+                
+                if high_idx <= low_idx:
+                    # Fallback to full range if invalid
+                    low_idx = 0
+                    high_idx = n
+                
+                idx = np.random.choice(np.arange(low_idx, high_idx))
                 entity_values[key].append(values[idx])
 
             else:
