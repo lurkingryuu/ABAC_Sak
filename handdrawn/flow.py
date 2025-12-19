@@ -251,4 +251,4 @@ def analyze_and_refine(image_path, iterations=2):
 
 
 if __name__ == "__main__":
-    analyze_and_refine("normal.png", iterations=0)
+    analyze_and_refine("sample/SA_1N.JPG", iterations=1)
