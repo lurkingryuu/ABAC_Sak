@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload Input JSON</title>
+    <title>MuSimA - Multi-Modal Simulator for ABAC Systems</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
     <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit" async defer></script>
@@ -15,8 +15,8 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>SimA</h1>
-            <p class="subtitle">Upload your JSON file or edit it directly to generate ABAC simulation data</p>
+            <h1>MuSimA</h1>
+            <p class="subtitle">A Multi-Modal Simulator for ABAC Systems</p>
         </div>
         
         <div id="message-container" class="message-container" style="display: none;"></div>
@@ -25,6 +25,7 @@
         <div class="tabs">
             <button class="tab-btn active" data-tab="upload">Upload File</button>
             <button class="tab-btn" data-tab="editor">Edit JSON</button>
+            <button class="tab-btn" data-tab="multimodal">Hand-drawn Input</button>
             <button class="tab-btn" data-tab="schema">Schema / Format</button>
         </div>
         
@@ -79,6 +80,59 @@
                     </button>
                 </div>
             </div>
+        </div>
+
+        <!-- Multimodal Input Tab -->
+        <div id="multimodal-tab" class="tab-content">
+            <form id="multimodal-form" action="/upload-multimodal" method="post" enctype="multipart/form-data">
+                <p class="section-description">
+                    Upload a ZIP file containing hand-drawn distribution images and a minimal JSON configuration.
+                </p>
+
+                <div class="form-group">
+                    <label class="form-label">1. Distribution Images (ZIP)</label>
+                    <div class="file-input-wrapper" id="zip-wrapper">
+                        <label for="zip-input" class="file-label">
+                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <span id="zip-name" class="file-name">Choose a ZIP file</span>
+                            <input type="file" id="zip-input" name="zip_file" accept=".zip" required>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">2. Configuration (Minimal JSON)</label>
+                    <div class="file-input-wrapper" id="min-json-wrapper">
+                        <label for="min-json-input" class="file-label">
+                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                <polyline points="14 2 14 8 20 8"></polyline>
+                                <line x1="16" y1="13" x2="8" y2="13"></line>
+                                <line x1="16" y1="17" x2="8" y2="17"></line>
+                                <polyline points="10 9 9 9 8 9"></polyline>
+                            </svg>
+                            <span id="min-json-name" class="file-name">Choose Minimal JSON</span>
+                            <input type="file" id="min-json-input" name="json_file" accept=".json" required>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="recaptcha-multimodal" style="margin: 20px 0;"></div>
+
+                <div class="button-group">
+                    <button type="submit" id="submit-multimodal-btn" class="btn btn-primary">
+                        <span class="btn-text">Process Multimodal Input</span>
+                        <span class="btn-loader" style="display: none;">
+                            <span class="spinner"></span>
+                            Processing...
+                        </span>
+                    </button>
+                </div>
+            </form>
         </div>
 
         <!-- Schema / Format Tab -->
@@ -198,7 +252,8 @@
         let recaptchaSiteKey = '';
         let recaptchaWidgetIds = {
             upload: null,
-            json: null
+            json: null,
+            multimodal: null
         };
         // Callback when reCAPTCHA script loads
         window.onRecaptchaLoad = function() {
@@ -235,20 +290,35 @@
                                 // Silently handle rendering errors
                             }
                         }
+
+                        const recaptchaMultimodal = document.getElementById('recaptcha-multimodal');
+                        if (recaptchaMultimodal && recaptchaWidgetIds.multimodal === null) {
+                            try {
+                                recaptchaWidgetIds.multimodal = grecaptcha.render('recaptcha-multimodal', {
+                                    'sitekey': recaptchaSiteKey
+                                });
+                            } catch (error) {
+                                // Silently handle rendering errors
+                            }
+                        }
                     } else {
                         // Hide reCAPTCHA containers if no site key
                         const recaptchaUpload = document.getElementById('recaptcha-upload');
                         const recaptchaJson = document.getElementById('recaptcha-json');
+                        const recaptchaMultimodal = document.getElementById('recaptcha-multimodal');
                         if (recaptchaUpload) recaptchaUpload.style.display = 'none';
                         if (recaptchaJson) recaptchaJson.style.display = 'none';
+                        if (recaptchaMultimodal) recaptchaMultimodal.style.display = 'none';
                     }
                 })
                 .catch(error => {
                     // Hide reCAPTCHA containers on error
                     const recaptchaUpload = document.getElementById('recaptcha-upload');
                     const recaptchaJson = document.getElementById('recaptcha-json');
+                    const recaptchaMultimodal = document.getElementById('recaptcha-multimodal');
                     if (recaptchaUpload) recaptchaUpload.style.display = 'none';
                     if (recaptchaJson) recaptchaJson.style.display = 'none';
+                    if (recaptchaMultimodal) recaptchaMultimodal.style.display = 'none';
                 });
         };
         
@@ -934,6 +1004,164 @@
                 });
             }
         }
+
+        // Multimodal form handling
+        const mmForm = document.getElementById('multimodal-form');
+        const zipInput = document.getElementById('zip-input');
+        const zipName = document.getElementById('zip-name');
+        const minJsonInput = document.getElementById('min-json-input');
+        const minJsonName = document.getElementById('min-json-name');
+        
+        // Helper to setup file input listeners
+        function setupFileInput(input, nameDisplay, label, allowedExt) {
+            if (!input || !label) return;
+            
+            input.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    nameDisplay.textContent = file.name;
+                    nameDisplay.classList.add('has-file');
+                    hideMessage();
+                } else {
+                    nameDisplay.textContent = nameDisplay.getAttribute('data-default') || 'Choose file';
+                    nameDisplay.classList.remove('has-file');
+                }
+            });
+            
+            // Store default text
+            if (!nameDisplay.getAttribute('data-default')) {
+                nameDisplay.setAttribute('data-default', nameDisplay.textContent);
+            }
+
+            // Drag & drop
+            const preventDefaults = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            };
+
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                label.addEventListener(eventName, preventDefaults, false);
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                label.addEventListener(eventName, () => label.classList.add('dragover'), false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                label.addEventListener(eventName, () => label.classList.remove('dragover'), false);
+            });
+
+            label.addEventListener('drop', (e) => {
+                const files = e.dataTransfer?.files;
+                if (!files || files.length === 0) return;
+
+                const file = files[0];
+                if (!file.name.toLowerCase().endsWith(allowedExt)) {
+                    showMessage(`Please drop a ${allowedExt} file`, 'error');
+                    return;
+                }
+
+                try {
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    input.files = dt.files;
+                    
+                    // Trigger change event manually
+                    const event = new Event('change');
+                    input.dispatchEvent(event);
+                } catch (err) {}
+            }, false);
+        }
+
+        setupFileInput(zipInput, zipName, document.querySelector('#zip-wrapper .file-label'), '.zip');
+        setupFileInput(minJsonInput, minJsonName, document.querySelector('#min-json-wrapper .file-label'), '.json');
+
+        if (mmForm) {
+            mmForm.addEventListener('submit', async function(e) {
+                e.preventDefault();
+                
+                const zipFile = zipInput.files[0];
+                const jsonFile = minJsonInput.files[0];
+                
+                if (!zipFile) { showMessage('Please select a ZIP file', 'error'); return; }
+                if (!jsonFile) { showMessage('Please select a JSON file', 'error'); return; }
+                
+                if (!zipFile.name.toLowerCase().endsWith('.zip')) { showMessage('Invalid ZIP file', 'error'); return; }
+                if (!jsonFile.name.toLowerCase().endsWith('.json')) { showMessage('Invalid JSON file', 'error'); return; }
+                
+                // Verify reCAPTCHA
+                if (typeof grecaptcha === 'undefined') {
+                    showMessage('reCAPTCHA is not loaded. Please refresh the page.', 'error');
+                    return;
+                }
+                const recaptchaWidgetId = recaptchaWidgetIds.multimodal;
+                const recaptchaResponse = recaptchaWidgetId !== null 
+                    ? grecaptcha.getResponse(recaptchaWidgetId) 
+                    : grecaptcha.getResponse();
+                
+                if (!recaptchaResponse) {
+                    showMessage('Please complete the reCAPTCHA verification', 'error');
+                    return;
+                }
+
+                // UI Loading State
+                hideMessage();
+                downloadContainer.style.display = 'none';
+                const btn = document.getElementById('submit-multimodal-btn');
+                const btnText = btn.querySelector('.btn-text');
+                const btnLoader = btn.querySelector('.btn-loader');
+                
+                btn.disabled = true;
+                btnText.style.display = 'none';
+                btnLoader.style.display = 'flex';
+                progressContainer.style.display = 'block';
+                resetProgressSteps();
+                activateStep('step-upload');
+
+                const formData = new FormData();
+                formData.append('zip_file', zipFile);
+                formData.append('json_file', jsonFile);
+                formData.append('g-recaptcha-response', recaptchaResponse);
+
+                try {
+                    showMessage('Uploading files...', 'success');
+                    const uploadResponse = await fetch('/upload-multimodal', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    let uploadData;
+                    const contentType = uploadResponse.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        uploadData = await uploadResponse.json();
+                    } else {
+                        const text = await uploadResponse.text();
+                        throw new Error(`Unexpected response: ${text.substring(0, 100)}...`);
+                    }
+
+                    if (!uploadResponse.ok || !uploadData.success) {
+                        throw new Error(uploadData.error || uploadData.message || 'Upload failed');
+                    }
+
+                    const jobId = uploadData.job_id;
+                    showMessage('Files uploaded. Processing...', 'success');
+                    activateStep('step-process');
+                    await pollJobStatus(jobId);
+
+                } catch (error) {
+                    showMessage(error.message || 'An error occurred', 'error');
+                    resetProgressSteps();
+                    if (typeof grecaptcha !== 'undefined' && recaptchaWidgetIds.multimodal !== null) {
+                        grecaptcha.reset(recaptchaWidgetIds.multimodal);
+                    }
+                } finally {
+                    btn.disabled = false;
+                    btnText.style.display = 'inline';
+                    btnLoader.style.display = 'none';
+                }
+            });
+        }
+
     </script>
 </body>
 </html>

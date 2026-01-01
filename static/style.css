@@ -78,6 +78,28 @@ h1 {
     }
 }
 
+/* Form Groups (New) */
+.form-group {
+    margin-bottom: 24px;
+    text-align: left;
+}
+
+.form-label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #333;
+    font-size: 14px;
+}
+
+.section-description {
+    color: #666;
+    font-size: 14px;
+    margin-bottom: 20px;
+    line-height: 1.5;
+    text-align: left;
+}
+
 /* File Input */
 .file-input-wrapper {
     margin-bottom: 24px;
