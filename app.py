@@ -21,6 +21,11 @@ import io
 import zipfile
 import time
 from dotenv import load_dotenv
+
+# Import handdrawn processor
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'handdrawn'))
+from handdrawn.process_zip import process_zip_file  # type: ignore
+
 try:
     load_dotenv()
 except PermissionError:
@@ -103,6 +108,13 @@ class JobManager:
                 self.jobs[job_id]['input_json_path'] = input_json_path
                 self.jobs[job_id]['config_ini_path'] = config_ini_path
                 self.jobs[job_id]['output_dir'] = output_dir
+                self.jobs[job_id]['updated_at'] = datetime.now().isoformat()
+
+    def set_extra_data(self, job_id, **kwargs):
+        """Attach arbitrary extra data to the job."""
+        with self.lock:
+            if job_id in self.jobs:
+                self.jobs[job_id].update(kwargs)
                 self.jobs[job_id]['updated_at'] = datetime.now().isoformat()
 
     def cleanup_old_jobs(self, max_age_hours=24):
@@ -360,6 +372,137 @@ def process_file_background(job_id):
         job_manager.update_job(job_id, JobStatus.FAILED, error=error_msg)
 
 
+def process_multimodal_background(job_id):
+    """Process multimodal input (ZIP + JSON) in background"""
+    try:
+        job = job_manager.get_job(job_id)
+        if not job:
+            return
+
+        # We stored the specific file paths in the job
+        zip_path = job.get('zip_path')
+        min_json_path = job.get('min_json_path')
+        
+        # Standard paths for the pipeline
+        input_json_path = job.get('input_json_path')
+        config_ini_path = job.get('config_ini_path')
+        output_dir = job.get('output_dir')
+        work_dir = job.get('work_dir')
+
+        if not (zip_path and min_json_path and input_json_path and 
+                config_ini_path and output_dir):
+            raise RuntimeError("Job paths not initialized")
+
+        job_manager.update_job(job_id, JobStatus.PROCESSING, progress=10)
+
+        # Step 1: Process ZIP file using handdrawn module
+        # This extracts distributions and creates a partial config
+        # We use a subfolder for handdrawn outputs to keep things clean
+        handdrawn_output_dir = os.path.join(work_dir, 'handdrawn_output')
+        os.makedirs(handdrawn_output_dir, exist_ok=True)
+        
+        # Check if Gemini API key is present
+        if not os.environ.get("GEMINI_API_KEY"):
+            raise ValueError("GEMINI_API_KEY not found in environment variables")
+
+        try:
+            # Call the synchronous process_zip_file function
+            # It expects a string path and output directory
+            abac_config = process_zip_file(
+                zip_path=zip_path,
+                output_dir=handdrawn_output_dir,
+                refinement_iterations=1
+            )
+            
+            if not abac_config:
+                raise RuntimeError("Failed to extract configuration from images")
+                
+            extracted_config = abac_config.to_dict()
+            
+        except Exception as e:
+            raise RuntimeError(f"Error processing hand-drawn images: {str(e)}")
+
+        job_manager.update_job(job_id, JobStatus.PROCESSING, progress=30)
+
+        # Step 2: Merge with minimal JSON
+        try:
+            with open(min_json_path, 'r') as f:
+                min_config = json.load(f)
+        except Exception as e:
+            raise RuntimeError(f"Failed to read minimal JSON: {str(e)}")
+
+        # Merge: extracted config takes precedence for attribute definitions,
+        # minimal config provides sizes/counts
+        final_config = {**min_config, **extracted_config}
+        
+        # Save merged input.json
+        with open(input_json_path, 'w') as f:
+            json.dump(final_config, f, indent=4)
+            
+        job_manager.update_job(job_id, JobStatus.PROCESSING, progress=40)
+
+        # Step 3: Run Standard Pipeline (Convert -> Gen)
+        # Convert input.json to config.ini
+        script_path = os.path.join(ACCESS_CONTROL_FOLDER, 'input.py')
+        cwd = os.path.dirname(os.path.abspath(__file__))
+        python_exe = get_python_executable()
+
+        env = os.environ.copy()
+        env[ENV_INPUT_JSON] = input_json_path
+        env[ENV_CONFIG_INI] = config_ini_path
+        env[ENV_OUTPUT_DIR] = output_dir
+        # Threading settings
+        for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", 
+                  "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+            env.setdefault(k, "1")
+
+        subprocess.run(
+            [python_exe, script_path],
+            check=True,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=PROCESS_TIMEOUT,
+            env=env,
+        )
+
+        job_manager.update_job(job_id, JobStatus.GENERATING, progress=60)
+
+        # Run gen.py
+        script_path = os.path.join(ACCESS_CONTROL_FOLDER, 'gen.py')
+        
+        subprocess.run(
+            [python_exe, script_path],
+            check=True,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=PROCESS_TIMEOUT,
+            env=env,
+        )
+        
+        # Also copy the comparison images to the main output directory 
+        # so they can be included in the bundle if desired, or just left in handdrawn_output
+        # For now, we leave them in handdrawn_output but maybe we want to zip them?
+        # The download_bundle function currently zips 'outputs/*', so we should copy comparison images there.
+        comparisons_src = os.path.join(handdrawn_output_dir, 'comparisons')
+        if os.path.exists(comparisons_src):
+            comparisons_dst = os.path.join(output_dir, 'comparisons')
+            shutil.copytree(comparisons_src, comparisons_dst, dirs_exist_ok=True)
+
+        job_manager.update_job(job_id, JobStatus.COMPLETED, progress=100)
+
+    except subprocess.TimeoutExpired:
+        error_msg = "Processing timeout. Please try with smaller inputs."
+        job_manager.update_job(job_id, JobStatus.FAILED, error=error_msg)
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Pipeline failed: {e.stderr or str(e)}"
+        job_manager.update_job(job_id, JobStatus.FAILED, error=error_msg)
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        job_manager.update_job(job_id, JobStatus.FAILED, error=error_msg)
+
+
 def verify_recaptcha(recaptcha_response):
     """Verify reCAPTCHA response with Google's API"""
     if not RECAPTCHA_SECRET_KEY:
@@ -558,6 +701,85 @@ def upload_json():
             'success': False,
             'error': 'Invalid JSON format'
         }), 400
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'An unexpected error occurred: {str(e)}'
+        }), 500
+
+
+@app.route('/upload-multimodal', methods=['POST'])
+def upload_multimodal():
+    """Upload ZIP + JSON for multimodal processing"""
+    if 'zip_file' not in request.files or 'json_file' not in request.files:
+        return jsonify({'success': False, 'error': 'Missing files'}), 400
+
+    zip_file = request.files['zip_file']
+    json_file = request.files['json_file']
+
+    if zip_file.filename == '' or json_file.filename == '':
+        return jsonify({'success': False, 'error': 'No selected file'}), 400
+
+    if not zip_file.filename.lower().endswith('.zip'):
+        return jsonify({'success': False, 'error': 'Invalid ZIP file'}), 400
+    if not json_file.filename.lower().endswith('.json'):
+        return jsonify({'success': False, 'error': 'Invalid JSON file'}), 400
+
+    # Verify reCAPTCHA
+    recaptcha_response = request.form.get('g-recaptcha-response')
+    if not verify_recaptcha(recaptcha_response):
+        return jsonify({
+            'success': False,
+            'error': 'reCAPTCHA verification failed. Please try again.'
+        }), 400
+
+    try:
+        cleanup_job_folders(
+            max_age_hours=JOBS_MAX_AGE_HOURS,
+            max_total_mb=JOBS_MAX_TOTAL_MB,
+        )
+
+        # Create job
+        job_id = job_manager.create_job()
+        paths = job_paths(job_id)
+        os.makedirs(paths['uploads_dir'], exist_ok=True)
+        os.makedirs(paths['output_dir'], exist_ok=True)
+
+        # Save files
+        zip_save_path = os.path.join(paths['uploads_dir'], 'distribution_images.zip')
+        min_json_save_path = os.path.join(paths['uploads_dir'], 'minimal_config.json')
+        
+        zip_file.save(zip_save_path)
+        json_file.save(min_json_save_path)
+
+        job_manager.set_job_paths(
+            job_id=job_id,
+            work_dir=paths['work_dir'],
+            input_json_path=paths['input_json_path'], # This will be the merged result
+            config_ini_path=paths['config_ini_path'],
+            output_dir=paths['output_dir'],
+        )
+        
+        job_manager.set_extra_data(
+            job_id=job_id,
+            zip_path=zip_save_path,
+            min_json_path=min_json_save_path
+        )
+
+        # Start background processing
+        thread = threading.Thread(
+            target=process_multimodal_background,
+            args=(job_id,),
+            daemon=True
+        )
+        thread.start()
+
+        return jsonify({
+            'success': True,
+            'job_id': job_id,
+            'message': 'Files uploaded. Processing started in background.'
+        }), 200
+
     except Exception as e:
         return jsonify({
             'success': False,
