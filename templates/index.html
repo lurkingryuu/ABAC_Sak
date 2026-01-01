@@ -93,10 +93,11 @@
                     <div class="schema-section-title">Required top-level fields</div>
                     <ul class="schema-list">
                         <li><code>subject_size</code>, <code>object_size</code>, <code>environment_size</code> (number)</li>
+                        <li><code>rules_count</code> (number)</li>
                         <li><code>subject_attributes_count</code>, <code>object_attributes_count</code>, <code>environment_attributes_count</code> (number)</li>
                         <li><code>subject_attributes_values</code>, <code>object_attributes_values</code>, <code>environment_attributes_values</code> (array of numbers)</li>
                         <li><code>subject_distributions</code>, <code>object_distributions</code>, <code>environment_distributions</code> (array of objects)</li>
-                        <li><code>rules_count</code> (number)</li>
+
                     </ul>
                 </div>
 
@@ -556,6 +557,7 @@
                 "subject_size": 0,
                 "object_size": 0,
                 "environment_size": 0,
+                "rules_count": 0,
                 "subject_attributes_count": 0,
                 "object_attributes_count": 0,
                 "environment_attributes_count": 0,
@@ -576,8 +578,7 @@
                     { "distribution": "N", "mean": 0, "variance": 0 },
                     { "distribution": "P", "lambda": 0 },
                     { "distribution": "U" }
-                ],
-                "rules_count": 0
+                ]
             }, null, 4);
         }
         if (schemaExampleEl) {

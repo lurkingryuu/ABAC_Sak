@@ -78,6 +78,28 @@ class UniformDist(BaseModel):
 DistributionResponse = Union[NormalDist, PoissonDist, UniformDist]
 adapter = TypeAdapter(DistributionResponse)
 
+class DistributionTypeOnly(BaseModel):
+    """
+    A lightweight classifier output to decide which distribution family best matches the sketch.
+    We intentionally keep this separate from parameter extraction, because using a Union schema
+    often causes the model to "default" to Normal even for clearly skewed/Poisson-like sketches.
+    """
+
+    dist_type: Literal["normal", "poisson", "uniform"] = Field(
+        description="Best matching distribution family for the sketch."
+    )
+    confidence: Optional[float] = Field(
+        default=None,
+        description="Optional confidence in [0,1]. Use low confidence if uncertain.",
+    )
+    evidence_text: Optional[str] = Field(
+        default=None,
+        description="Optional short explanation of the key visual cues (e.g., 'right-skewed long tail').",
+    )
+
+
+dist_type_adapter = TypeAdapter(DistributionTypeOnly)
+
 
 # --- ATTRIBUTE METADATA EXTRACTION ---
 
@@ -178,15 +200,24 @@ class Plotter:
                 plt.ylim(0, max(params.y_axis_max, params.visual_peak_height * 1.1))
                 
             elif isinstance(params, PoissonDist):
+                # Poisson is discrete, but many sketches look like a smooth curve.
+                # Plot as connected points + light fill so the comparison is fair.
                 x_discrete = np.arange(int(params.x_axis_min), int(params.x_axis_max) + 1)
                 y_std = stats.poisson.pmf(x_discrete, params.lam)
                 std_peak = np.max(y_std) if np.max(y_std) > 0 else 1.0
                 scale_factor = params.visual_peak_height / std_peak
                 y_scaled = y_std * scale_factor
                 
-                plt.stem(x_discrete, y_scaled, 
-                        label=rf'Poisson($\lambda={params.lam:.1f}$)', 
-                        basefmt=" ", linefmt='#dc2626', markerfmt='o')
+                plt.plot(
+                    x_discrete,
+                    y_scaled,
+                    label=rf'Poisson($\lambda={params.lam:.2f}$)',
+                    color='#dc2626',
+                    linewidth=2,
+                    marker='o',
+                    markersize=4,
+                )
+                plt.fill_between(x_discrete, y_scaled, alpha=0.15, color='#dc2626')
                 plt.ylim(0, max(params.y_axis_max, params.visual_peak_height * 1.1))
                 
             elif isinstance(params, UniformDist):
@@ -306,29 +337,30 @@ def extract_metadata_from_image(image: Image.Image) -> Optional[AttributeMetadat
 
 def extract_distribution_params(image: Image.Image, attr_label: str) -> Optional[DistributionResponse]:
     """Extracts distribution parameters from an image using LLM."""
+    # NOTE: This legacy Union-based extraction is kept as a fallback.
+    # The main pipeline now classifies dist_type first and then extracts via a type-specific schema.
     prompt = f"""
     Analyze this distribution chart for attribute {attr_label}.
-    Determine if it shows a Normal, Poisson, or Uniform distribution.
-    
-    IMPORTANT GUIDELINES:
-    
-    - For Normal Distribution:
-      - Read the X-axis labels to determine 'x_axis_min' and 'x_axis_max'.
-      - The 'mu' (mean) is the X-value at the peak of the curve.
-      - Estimate 'sigma' from the width (where the curve drops to ~60% of peak).
-      - The 'visual_peak_height' is the Y-value at the peak.
-      - The 'y_axis_max' is the maximum value shown on the Y-axis.
-      
-    - For Poisson Distribution:
-      - Identify the 'lam' (lambda) parameter from where the distribution peaks.
-      - Note the bars/stems pattern typical of discrete Poisson.
-      
-    - For Uniform Distribution:
-      - All bars should have roughly equal height.
-      - 'low_index' and 'high_index' are 1-based indices of the range.
-      - Look at X-axis labels like "1", "2", "3" or "{attr_label}.1", "{attr_label}.2".
-    
-    Extract the precise parameters from the visual representation.
+    First decide which family best matches (Normal vs Poisson vs Uniform), then extract parameters.
+
+    Use standard differentiators (do NOT default to Normal):
+
+    - Normal (Gaussian): continuous, smooth, unimodal, approximately symmetric bell shape about its center.
+      Parameters: mu (center/peak x), sigma (spread/width). Symmetry is the key cue.
+
+    - Poisson: discrete distribution over non-negative integers representing event counts per fixed interval.
+      It may be depicted as bars/points OR drawn as a smoothed curve in sketches.
+      Shape: often right-skewed for small λ, becoming more symmetric and bell-like as λ increases.
+      Parameter: λ (rate), where mean ≈ variance ≈ λ.
+      Key cues vs Normal: non-negative integer support, count-like x-axis, and/or noticeable right-skew.
+
+    - Uniform: approximately constant height across a bounded range (flat-top / equal bars).
+      Parameters: range endpoints (in this schema, low_index/high_index for the discrete range depiction).
+
+    Also extract chart scaling information from the drawing:
+    - x_axis_min/x_axis_max from the X-axis endpoints shown
+    - y_axis_max from the Y-axis maximum label
+    - visual_peak_height as the peak Y-value drawn (or bar height for uniform)
     """
     
     try:
@@ -343,6 +375,128 @@ def extract_distribution_params(image: Image.Image, attr_label: str) -> Optional
         return adapter.validate_json(response.text)
     except Exception as e:
         print(f"  [ERROR] Distribution extraction failed: {e}")
+        return None
+
+
+def classify_distribution_type(image: Image.Image, attr_label: str) -> Optional[DistributionTypeOnly]:
+    """Classify the distribution family (normal/poisson/uniform) before parameter extraction."""
+    prompt = f"""
+    You are classifying a hand-drawn distribution sketch for attribute {attr_label}.
+    Output ONLY a JSON object with fields: dist_type, confidence (optional), evidence_text (optional).
+
+    Choose the SINGLE best-matching distribution family using standard statistical characteristics:
+
+    1) Normal (Gaussian)
+       - Type: continuous (smooth curve over real-valued x)
+       - Support: all real numbers (in theory), often plotted over a finite window
+       - Shape: unimodal and approximately symmetric "bell" around its center
+       - Key cue: symmetry about the peak
+
+    2) Poisson
+       - Type: discrete (probability mass at integer x), but may be sketched as a smoothed curve
+       - Support: non-negative integers (0, 1, 2, ...)
+       - Shape: typically right-skewed when λ is small; becomes more symmetric as λ increases
+       - Interpretation: counts/events per fixed interval; mean ≈ variance ≈ λ
+       - Key cues vs Normal: non-negative integer support + count-like axis + skew that changes with λ
+
+    3) Uniform
+       - Support: bounded interval [a, b] (or discrete integers in a range)
+       - Shape: approximately flat/constant height across the supported range
+
+    Differentiation checklist:
+    - If heights are roughly constant across a range ⇒ uniform.
+    - Else if the curve is approximately symmetric around its peak ⇒ normal.
+    - Else if x is count-like (integers) with non-negative support and a typically right-skewed shape ⇒ poisson.
+
+    If uncertain, pick the family whose *support and symmetry/skew* best match the drawing and reflect uncertainty via confidence.
+    """
+    try:
+        response = client.models.generate_content(
+            model=MODEL_ID,
+            contents=[prompt, image],
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": DistributionTypeOnly,
+            },
+        )
+        return dist_type_adapter.validate_json(response.text)
+    except Exception as e:
+        print(f"  [WARNING] Distribution type classification failed: {e}")
+        return None
+
+
+def extract_normal_params(image: Image.Image, attr_label: str) -> Optional[NormalDist]:
+    prompt = f"""
+    Extract parameters for a **Normal** distribution for attribute {attr_label}.
+    Requirements:
+    - Read x_axis_min/x_axis_max from the drawn X-axis endpoints.
+    - mu = x location of the peak.
+    - sigma from the spread (how quickly it falls off).
+    - y_axis_max is the maximum y value shown on the axis.
+    - visual_peak_height is the y value at the peak of the curve.
+    """
+    try:
+        response = client.models.generate_content(
+            model=MODEL_ID,
+            contents=[prompt, image],
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": NormalDist,
+            },
+        )
+        return TypeAdapter(NormalDist).validate_json(response.text)
+    except Exception as e:
+        print(f"  [ERROR] Normal param extraction failed: {e}")
+        return None
+
+
+def extract_poisson_params(image: Image.Image, attr_label: str) -> Optional[PoissonDist]:
+    prompt = f"""
+    Extract parameters for a **Poisson** distribution for attribute {attr_label}.
+    Notes:
+    - The sketch may be drawn as a smooth curve even though Poisson is discrete.
+    - Use x_axis_min/x_axis_max from X-axis endpoints (often starts at 0).
+    - lam (λ) is close to the x location of the peak when λ >= 1.
+      If the curve is highest at x=0 and decreases monotonically, λ < 1.
+    - y_axis_max is the maximum y value shown on the axis.
+    - visual_peak_height is the y value at the highest point/bar (often at x=0 for small λ).
+    """
+    try:
+        response = client.models.generate_content(
+            model=MODEL_ID,
+            contents=[prompt, image],
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": PoissonDist,
+            },
+        )
+        return TypeAdapter(PoissonDist).validate_json(response.text)
+    except Exception as e:
+        print(f"  [ERROR] Poisson param extraction failed: {e}")
+        return None
+
+
+def extract_uniform_params(image: Image.Image, attr_label: str) -> Optional[UniformDist]:
+    prompt = f"""
+    Extract parameters for a **Uniform** distribution for attribute {attr_label}.
+    Requirements:
+    - low_index/high_index are 1-based inclusive indices of the flat range.
+    - Read x_axis_min/x_axis_max from the drawn X-axis endpoints.
+    - y_axis_max is the maximum y value shown on the axis.
+    - visual_peak_height is the bar height (flat).
+    """
+    try:
+        response = client.models.generate_content(
+            model=MODEL_ID,
+            contents=[prompt, image],
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": UniformDist,
+            },
+        )
+        return TypeAdapter(UniformDist).validate_json(response.text)
+    except Exception as e:
+        print(f"  [ERROR] Uniform param extraction failed: {e}")
         return None
 
 
@@ -364,10 +518,16 @@ def refine_distribution_params(original_img: Image.Image,
         Current Parameters: {current_params.model_dump_json()}
         
         REFINEMENT INSTRUCTIONS:
-        - If the shapes don't match, adjust the parameters.
-        - For Normal: Check if mu (peak location) and sigma (width) are correct.
-        - For Poisson: Check if lambda gives the right peak location.
-        - For Uniform: Check if the range [low_index, high_index] is correct.
+        You may adjust parameters OR SWITCH distribution family (dist_type) if the family is a poor fit.
+        Use standard differentiators:
+        - Normal: smooth, unimodal, approximately symmetric bell about the center.
+        - Poisson: discrete non-negative integer support and count-like behavior; often right-skewed for small λ,
+          becoming more symmetric as λ increases; may be drawn as bars/points OR a smoothed curve.
+        - Uniform: approximately constant height across a bounded range.
+
+        Refinement strategy:
+        - Correct gross family mismatch first (flat vs peaked; symmetric vs clearly skewed; continuous real support vs non-negative counts).
+        - Then fine-tune parameters to match peak location and spread (Normal), skew/peak via λ (Poisson), and range (Uniform).
         
         EDGE CHECK (Critical for Normal):
         - If the original curve is still high at the edges but interpreted drops to zero,
@@ -428,8 +588,27 @@ def process_single_image(image: Image.Image,
     attr_label = f"{attr_type}-{attr_index}"
     print(f"  Processing {attr_label}...")
     
-    # Step 1: Extract distribution parameters
-    params = extract_distribution_params(image, attr_label)
+    # Step 1: Classify distribution family, then extract parameters with a type-specific schema.
+    # This avoids a common failure mode where the model defaults to "normal" for skewed Poisson-like sketches.
+    dist_type = classify_distribution_type(image, attr_label)
+    if dist_type:
+        print(
+            f"    Classified: {dist_type.dist_type}"
+            + (f" (conf={dist_type.confidence:.2f})" if dist_type.confidence is not None else "")
+            + (f" — {dist_type.evidence_text}" if dist_type.evidence_text else "")
+        )
+
+    params: Optional[DistributionResponse] = None
+    if dist_type and dist_type.dist_type == "poisson":
+        params = extract_poisson_params(image, attr_label)
+    elif dist_type and dist_type.dist_type == "uniform":
+        params = extract_uniform_params(image, attr_label)
+    elif dist_type and dist_type.dist_type == "normal":
+        params = extract_normal_params(image, attr_label)
+    else:
+        # Fallback to legacy union-based extraction.
+        params = extract_distribution_params(image, attr_label)
+
     if not params:
         print(f"  [ERROR] Could not extract distribution for {attr_label}")
         return None
