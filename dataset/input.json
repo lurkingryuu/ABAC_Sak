@@ -2,17 +2,29 @@
     "subject_size": 10,
     "object_size": 15,
     "environment_size": 5,
+    "rules_count": 20,
     "subject_attributes_count": 3,
     "object_attributes_count": 4,
     "environment_attributes_count": 2,
-    "subject_attributes_values": [3, 4, 5],
-    "object_attributes_values": [2, 3, 4, 5],
-    "environment_attributes_values": [1, 2],
+    "subject_attributes_values": [
+        3,
+        4,
+        5
+    ],
+    "object_attributes_values": [
+        2,
+        3,
+        4,
+        5
+    ],
+    "environment_attributes_values": [
+        1,
+        2
+    ],
     "subject_mean": 3,
     "subject_variance": 1,
     "object_mean": 4,
     "object_variance": 1.5,
     "environment_mean": 2,
-    "environment_variance": 0.5,
-    "rules_count": 20
+    "environment_variance": 0.5
 }

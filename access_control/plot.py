@@ -12,9 +12,15 @@ from scipy.stats import truncnorm
 
 # --- Paths ---
 BASE_DIR = os.path.dirname(__file__)
-OUTPUT_JSON_PATH = os.path.join(BASE_DIR, '../outputs/output.json')
-CONFIG_PATH = os.path.join(BASE_DIR, 'config.ini')
-PLOTS_FOLDER = os.path.join(BASE_DIR, '../plots')
+ENV_CONFIG_INI = "ABAC_CONFIG_INI"
+ENV_OUTPUT_DIR = "ABAC_OUTPUT_DIR"
+
+_out_dir = os.environ.get(ENV_OUTPUT_DIR) or os.path.join(BASE_DIR, '../outputs')
+OUTPUT_JSON_PATH = os.path.join(_out_dir, 'output.json')
+
+CONFIG_PATH = os.environ.get(ENV_CONFIG_INI) or os.path.join(BASE_DIR, 'config.ini')
+ENV_PLOTS_DIR = "ABAC_PLOTS_DIR"
+PLOTS_FOLDER = os.environ.get(ENV_PLOTS_DIR) or os.path.join(BASE_DIR, '../plots')
 os.makedirs(PLOTS_FOLDER, exist_ok=True)
 
 # --- Read config ---
@@ -260,10 +266,10 @@ error_report = {
 }
 
 # write JSON summary to outputs folder
-OUT_DIR = os.path.join(BASE_DIR, '../outputs')
-os.makedirs(OUT_DIR, exist_ok=True)
-with open(os.path.join(OUT_DIR, 'error_summary.json'), 'w') as fh:
-    json.dump(error_report, fh, indent=4)
+# OUT_DIR = _out_dir
+# os.makedirs(OUT_DIR, exist_ok=True)
+# with open(os.path.join(OUT_DIR, 'error_summary.json'), 'w') as fh:
+#     json.dump(error_report, fh, indent=4)
 
 print("Error summary written to outputs/error_summary.json")
 

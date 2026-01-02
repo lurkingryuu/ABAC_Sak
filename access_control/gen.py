@@ -8,8 +8,13 @@ from math import factorial,exp
 from scipy.stats import truncnorm
 import gen_rules
 
-# Ensure config.ini exists in the access_control directory
-config_path = os.path.join(os.path.dirname(__file__), 'config.ini')
+ENV_CONFIG_INI = "ABAC_CONFIG_INI"
+ENV_OUTPUT_DIR = "ABAC_OUTPUT_DIR"
+
+# config.ini: default is access_control/config.ini, but can be overridden per-job.
+config_path = os.environ.get(ENV_CONFIG_INI) or os.path.join(
+    os.path.dirname(__file__), 'config.ini'
+)
 if not os.path.exists(config_path):
     raise FileNotFoundError("config.ini not found. Ensure input.py runs successfully before gen.py.")
 
@@ -17,8 +22,10 @@ if not os.path.exists(config_path):
 config = configparser.ConfigParser()
 config.read(config_path)
 
-# Define output directory inside flask_app/outputs
-OUTPUT_FOLDER = os.path.join(os.path.dirname(__file__), '../outputs')
+# Output directory: default is ../outputs, but can be overridden per-job.
+OUTPUT_FOLDER = os.environ.get(ENV_OUTPUT_DIR) or os.path.join(
+    os.path.dirname(__file__), '../outputs'
+)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 # Parse attributes from config.ini
@@ -165,7 +172,19 @@ def assign_values(attribute_values, distributions, entity_count,
 
             elif dist["distribution"] == "U":
                 # Uniform distribution
-                idx = np.random.choice(np.arange(n))
+                low_idx = dist.get("low", 0)
+                high_idx = dist.get("high", n)
+                
+                # Ensure integer bounds and clamp
+                low_idx = max(0, int(low_idx))
+                high_idx = min(n, int(high_idx))
+                
+                if high_idx <= low_idx:
+                    # Fallback to full range if invalid
+                    low_idx = 0
+                    high_idx = n
+                
+                idx = np.random.choice(np.arange(low_idx, high_idx))
                 entity_values[key].append(values[idx])
 
             else:
@@ -211,16 +230,19 @@ output_data = {
     "EV": EV
 }
 
-with open(os.path.join(OUTPUT_FOLDER, 'output.json'), 'w') as f:
-    json.dump(output_data, f, indent=4)
-
 # Generate rules and write to rules_temp.txt
 N = int(config["RULES"]["rules_count"])
 rules = gen_rules.generate_rules_2(N, n4, n5, n6, SV, OV, EV)
 
-with open(os.path.join(OUTPUT_FOLDER, "rules_temp.txt"), "w") as file:
-    for rule in rules:
-        file.write(rule + "\n")
+# Integrate generated rules into output.json as well
+output_data["rules"] = rules
+
+with open(os.path.join(OUTPUT_FOLDER, 'output.json'), 'w') as f:
+    json.dump(output_data, f, indent=4)
+
+# with open(os.path.join(OUTPUT_FOLDER, "rules_temp.txt"), "w") as file:
+#     for rule in rules:
+#         file.write(rule + "\n")
 
 print("Output generated successfully.")
 

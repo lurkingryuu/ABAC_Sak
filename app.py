@@ -19,8 +19,19 @@ from datetime import datetime
 from enum import Enum
 import io
 import zipfile
+import time
 from dotenv import load_dotenv
-load_dotenv()
+
+# Import handdrawn processor
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'handdrawn'))
+from handdrawn.process_zip import process_zip_file  # type: ignore
+
+try:
+    load_dotenv()
+except PermissionError:
+    # Some sandboxes / deployments may disallow reading `.env` even if present.
+    # Environment variables can still be provided through the process manager.
+    pass
 
 # Handle SIGPIPE gracefully (client disconnections)
 signal.signal(signal.SIGPIPE, signal.SIG_DFL)
@@ -61,7 +72,12 @@ class JobManager:
                 'created_at': datetime.now().isoformat(),
                 'updated_at': datetime.now().isoformat(),
                 'error': None,
-                'progress': 0
+                'progress': 0,
+                # Per-job paths (filled in by the upload handler)
+                'work_dir': None,
+                'input_json_path': None,
+                'config_ini_path': None,
+                'output_dir': None,
             }
         return job_id
 
@@ -82,6 +98,24 @@ class JobManager:
         """Get job status"""
         with self.lock:
             return self.jobs.get(job_id)
+
+    def set_job_paths(self, job_id, work_dir, input_json_path, config_ini_path,
+                      output_dir):
+        """Attach per-job filesystem paths used by the pipeline."""
+        with self.lock:
+            if job_id in self.jobs:
+                self.jobs[job_id]['work_dir'] = work_dir
+                self.jobs[job_id]['input_json_path'] = input_json_path
+                self.jobs[job_id]['config_ini_path'] = config_ini_path
+                self.jobs[job_id]['output_dir'] = output_dir
+                self.jobs[job_id]['updated_at'] = datetime.now().isoformat()
+
+    def set_extra_data(self, job_id, **kwargs):
+        """Attach arbitrary extra data to the job."""
+        with self.lock:
+            if job_id in self.jobs:
+                self.jobs[job_id].update(kwargs)
+                self.jobs[job_id]['updated_at'] = datetime.now().isoformat()
 
     def cleanup_old_jobs(self, max_age_hours=24):
         """Clean up jobs older than max_age_hours"""
@@ -121,16 +155,162 @@ UPLOAD_FOLDER = 'uploads'
 OUTPUT_FOLDER = 'outputs'
 ACCESS_CONTROL_FOLDER = 'access_control'
 
+# Per-job workspace folder (prevents concurrent users clobbering each other)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+JOBS_FOLDER = os.path.join(BASE_DIR, 'jobs')
+os.makedirs(JOBS_FOLDER, exist_ok=True)
+
+# Pipeline env vars (consumed by access_control/input.py and
+# access_control/gen.py).
+ENV_INPUT_JSON = "ABAC_INPUT_JSON"
+ENV_CONFIG_INI = "ABAC_CONFIG_INI"
+ENV_OUTPUT_DIR = "ABAC_OUTPUT_DIR"
+ENV_PLOTS_DIR = "ABAC_PLOTS_DIR"
+
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
+# Storage/retention controls (important for small quotas, e.g. 480MB)
+JOBS_MAX_AGE_HOURS = float(os.environ.get("ABAC_JOBS_MAX_AGE_HOURS", "12"))
+JOBS_MAX_TOTAL_MB = float(os.environ.get("ABAC_JOBS_MAX_TOTAL_MB", "400"))
+JOBS_CLEANUP_INTERVAL_SECONDS = float(
+    os.environ.get("ABAC_JOBS_CLEANUP_INTERVAL_SECONDS", "900")
+)
+
+
+def _dir_size_bytes(path: str) -> int:
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for name in files:
+            fp = os.path.join(root, name)
+            try:
+                total += os.path.getsize(fp)
+            except OSError:
+                continue
+    return total
+
+
+def cleanup_job_folders(max_age_hours: float, max_total_mb: float) -> None:
+    """
+    Delete old job folders and enforce a total size cap for JOBS_FOLDER.
+
+    This keeps the app within small storage quotas (e.g. 480MB).
+    """
+    now = datetime.now().timestamp()
+    max_age_seconds = max_age_hours * 3600.0
+
+    job_dirs = []
+    try:
+        for name in os.listdir(JOBS_FOLDER):
+            p = os.path.join(JOBS_FOLDER, name)
+            if not os.path.isdir(p):
+                continue
+            try:
+                mtime = os.path.getmtime(p)
+            except OSError:
+                mtime = now
+            job_dirs.append((name, p, mtime))
+    except OSError:
+        return
+
+    # 1) Age-based deletion
+    for _job_id, p, mtime in sorted(job_dirs, key=lambda x: x[2]):
+        if now - mtime <= max_age_seconds:
+            continue
+        try:
+            shutil.rmtree(p)
+        except OSError:
+            continue
+
+    # Refresh list after deletions
+    remaining = []
+    for name, p, _mtime in job_dirs:
+        if os.path.isdir(p):
+            try:
+                mtime = os.path.getmtime(p)
+            except OSError:
+                mtime = now
+            remaining.append((name, p, mtime))
+
+    # 2) Total size cap eviction (delete oldest first)
+    max_total_bytes = int(max_total_mb * 1024 * 1024)
+    total_bytes = sum(_dir_size_bytes(p) for _name, p, _mtime in remaining)
+    for _job_id, p, _mtime in sorted(remaining, key=lambda x: x[2]):
+        if total_bytes <= max_total_bytes:
+            break
+        try:
+            size = _dir_size_bytes(p)
+            shutil.rmtree(p)
+            total_bytes -= size
+        except OSError:
+            continue
+
+    # Keep the in-memory registry from growing forever too
+    job_manager.cleanup_old_jobs(max_age_hours=max_age_hours)
+
+
+def _start_cleanup_thread() -> None:
+    def loop():
+        while True:
+            try:
+                cleanup_job_folders(
+                    max_age_hours=JOBS_MAX_AGE_HOURS,
+                    max_total_mb=JOBS_MAX_TOTAL_MB,
+                )
+            except Exception:
+                # Never let cleanup kill the process.
+                pass
+            time.sleep(JOBS_CLEANUP_INTERVAL_SECONDS)
+
+    t = threading.Thread(target=loop, daemon=True)
+    t.start()
+
+
+# Start periodic cleanup to stay within small storage quotas.
+# (Safe in dev; in multi-worker deployments each worker may run it.)
+_start_cleanup_thread()
+
+
+def job_paths(job_id: str):
+    """
+    Return per-job paths used by the pipeline.
+
+    Layout:
+      jobs/<job_id>/uploads/input.json
+      jobs/<job_id>/config.ini
+      jobs/<job_id>/outputs/*
+    """
+    work_dir = os.path.join(JOBS_FOLDER, job_id)
+    uploads_dir = os.path.join(work_dir, 'uploads')
+    outputs_dir = os.path.join(work_dir, 'outputs')
+    input_json_path = os.path.join(uploads_dir, 'input.json')
+    config_ini_path = os.path.join(work_dir, 'config.ini')
+    return {
+        'work_dir': work_dir,
+        'uploads_dir': uploads_dir,
+        'output_dir': outputs_dir,
+        'input_json_path': input_json_path,
+        'config_ini_path': config_ini_path,
+    }
+
 
 def process_file_background(job_id):
     """Process file in background thread"""
     try:
+        job = job_manager.get_job(job_id)
+        if not job:
+            return
+
+        input_json_path = job.get('input_json_path')
+        config_ini_path = job.get('config_ini_path')
+        output_dir = job.get('output_dir')
+
+        if not input_json_path or not config_ini_path or not output_dir:
+            raise RuntimeError("Job paths not initialized")
+
         job_manager.update_job(job_id, JobStatus.PROCESSING, progress=25)
 
         # Step 1: Convert input.json to config.ini
@@ -138,13 +318,27 @@ def process_file_background(job_id):
         cwd = os.path.dirname(os.path.abspath(__file__))
         python_exe = get_python_executable()
 
+        env = os.environ.copy()
+        env[ENV_INPUT_JSON] = input_json_path
+        env[ENV_CONFIG_INI] = config_ini_path
+        env[ENV_OUTPUT_DIR] = output_dir
+        # Avoid issues with native libs (OpenBLAS/MKL) in constrained runtimes.
+        for k in (
+            "OMP_NUM_THREADS",
+            "OPENBLAS_NUM_THREADS",
+            "MKL_NUM_THREADS",
+            "NUMEXPR_NUM_THREADS",
+        ):
+            env.setdefault(k, "1")
+
         subprocess.run(
             [python_exe, script_path],
             check=True,
             cwd=cwd,
             capture_output=True,
             text=True,
-            timeout=PROCESS_TIMEOUT
+            timeout=PROCESS_TIMEOUT,
+            env=env,
         )
 
         job_manager.update_job(job_id, JobStatus.GENERATING, progress=50)
@@ -160,10 +354,51 @@ def process_file_background(job_id):
             cwd=cwd,
             capture_output=True,
             text=True,
-            timeout=PROCESS_TIMEOUT
+            timeout=PROCESS_TIMEOUT,
+            env=env,
         )
 
         # NOTE: plot/error-summary generation is intentionally NOT run here.
+
+        # Step 3: Generate Plots & README
+        # plots_dir = os.path.join(output_dir, 'plots')
+        plots_dir = os.path.join(output_dir, 'distribution_attestations', 'plots')
+        os.makedirs(plots_dir, exist_ok=True)
+        
+        script_path = os.path.join(ACCESS_CONTROL_FOLDER, 'plot.py')
+        
+        env_plots = env.copy()
+        env_plots[ENV_PLOTS_DIR] = plots_dir
+        
+        try:
+            subprocess.run(
+                [python_exe, script_path, "--plots"],
+                check=False, # Don't fail the job if plotting fails
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=PROCESS_TIMEOUT,
+                env=env_plots,
+            )
+        except Exception as e:
+            # Log error but don't fail job
+            print(f"Plot generation failed: {e}")
+
+        # Generate README
+        readme_path = os.path.join(output_dir, 'README.txt')
+        template_path = os.path.join(ACCESS_CONTROL_FOLDER, 'README_template.txt')
+        
+        try:
+            if os.path.exists(template_path):
+                shutil.copy(template_path, readme_path)
+            else:
+                # Fallback if template is missing
+                with open(readme_path, 'w') as f:
+                    f.write("ABAC Policy Mining - Output Bundle\n")
+                    f.write("See output.json for full data.\n")
+        except Exception as e:
+            print(f"Error creating README: {e}")
+
         job_manager.update_job(job_id, JobStatus.COMPLETED, progress=100)
 
     except subprocess.TimeoutExpired:
@@ -172,6 +407,174 @@ def process_file_background(job_id):
         job_manager.update_job(job_id, JobStatus.FAILED, error=error_msg)
     except subprocess.CalledProcessError as e:
         error_msg = f"Processing failed: {e.stderr or str(e)}"
+        job_manager.update_job(job_id, JobStatus.FAILED, error=error_msg)
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        job_manager.update_job(job_id, JobStatus.FAILED, error=error_msg)
+
+
+def process_multimodal_background(job_id):
+    """Process multimodal input (ZIP + JSON) in background"""
+    try:
+        job = job_manager.get_job(job_id)
+        if not job:
+            return
+
+        # We stored the specific file paths in the job
+        zip_path = job.get('zip_path')
+        min_json_path = job.get('min_json_path')
+        
+        # Standard paths for the pipeline
+        input_json_path = job.get('input_json_path')
+        config_ini_path = job.get('config_ini_path')
+        output_dir = job.get('output_dir')
+        work_dir = job.get('work_dir')
+
+        if not (zip_path and min_json_path and input_json_path and 
+                config_ini_path and output_dir):
+            raise RuntimeError("Job paths not initialized")
+
+        job_manager.update_job(job_id, JobStatus.PROCESSING, progress=10)
+
+        # Step 1: Process ZIP file using handdrawn module
+        # This extracts distributions and creates a partial config
+        # We use a subfolder for handdrawn outputs to keep things clean
+        handdrawn_output_dir = os.path.join(work_dir, 'handdrawn_output')
+        os.makedirs(handdrawn_output_dir, exist_ok=True)
+        
+        # Check if Gemini API key is present
+        if not os.environ.get("GEMINI_API_KEY"):
+            raise ValueError("GEMINI_API_KEY not found in environment variables")
+
+        try:
+            # Call the synchronous process_zip_file function
+            # It expects a string path and output directory
+            abac_config = process_zip_file(
+                zip_path=zip_path,
+                output_dir=handdrawn_output_dir,
+                refinement_iterations=1
+            )
+            
+            if not abac_config:
+                raise RuntimeError("Failed to extract configuration from images")
+                
+            extracted_config = abac_config.to_dict()
+            
+        except Exception as e:
+            raise RuntimeError(f"Error processing hand-drawn images: {str(e)}")
+
+        job_manager.update_job(job_id, JobStatus.PROCESSING, progress=30)
+
+        # Step 2: Merge with minimal JSON
+        try:
+            with open(min_json_path, 'r') as f:
+                min_config = json.load(f)
+        except Exception as e:
+            raise RuntimeError(f"Failed to read minimal JSON: {str(e)}")
+
+        # Merge: extracted config takes precedence for attribute definitions,
+        # minimal config provides sizes/counts
+        final_config = {**min_config, **extracted_config}
+        
+        # Save merged input.json
+        with open(input_json_path, 'w') as f:
+            json.dump(final_config, f, indent=4)
+            
+        job_manager.update_job(job_id, JobStatus.PROCESSING, progress=40)
+
+        # Step 3: Run Standard Pipeline (Convert -> Gen)
+        # Convert input.json to config.ini
+        script_path = os.path.join(ACCESS_CONTROL_FOLDER, 'input.py')
+        cwd = os.path.dirname(os.path.abspath(__file__))
+        python_exe = get_python_executable()
+
+        env = os.environ.copy()
+        env[ENV_INPUT_JSON] = input_json_path
+        env[ENV_CONFIG_INI] = config_ini_path
+        env[ENV_OUTPUT_DIR] = output_dir
+        # Threading settings
+        for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", 
+                  "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+            env.setdefault(k, "1")
+
+        subprocess.run(
+            [python_exe, script_path],
+            check=True,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=PROCESS_TIMEOUT,
+            env=env,
+        )
+
+        job_manager.update_job(job_id, JobStatus.GENERATING, progress=60)
+
+        # Run gen.py
+        script_path = os.path.join(ACCESS_CONTROL_FOLDER, 'gen.py')
+        
+        subprocess.run(
+            [python_exe, script_path],
+            check=True,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=PROCESS_TIMEOUT,
+            env=env,
+        )
+        
+        # Also copy the comparison images to the main output directory 
+        # so they can be included in the bundle if desired, or just left in handdrawn_output
+        # The download_bundle function currently zips 'outputs/*', so we should copy comparison images there.
+        comparisons_src = os.path.join(handdrawn_output_dir, 'comparisons')
+        if os.path.exists(comparisons_src):
+            comparisons_dst = os.path.join(output_dir, 'distribution_attestations', 'comparisons')
+            shutil.copytree(comparisons_src, comparisons_dst, dirs_exist_ok=True)
+
+        # Step 4: Generate Plots & README (for multimodal too)
+        # plots_dir = os.path.join(output_dir, 'plots')
+        plots_dir = os.path.join(output_dir, 'distribution_attestations', 'plots')
+        os.makedirs(plots_dir, exist_ok=True)
+        
+        script_path = os.path.join(ACCESS_CONTROL_FOLDER, 'plot.py')
+        
+        env_plots = env.copy()
+        env_plots[ENV_PLOTS_DIR] = plots_dir
+        
+        try:
+            subprocess.run(
+                [python_exe, script_path, "--plots"],
+                check=False, 
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=PROCESS_TIMEOUT,
+                env=env_plots,
+            )
+        except Exception as e:
+            print(f"Plot generation failed: {e}")
+
+        # Generate README
+        readme_path = os.path.join(output_dir, 'README.txt')
+        template_path = os.path.join(ACCESS_CONTROL_FOLDER, 'README_template.txt')
+        
+        try:
+            if os.path.exists(template_path):
+                shutil.copy(template_path, readme_path)
+            else:
+                # Fallback if template is missing
+                with open(readme_path, 'w') as f:
+                    f.write("ABAC Policy Mining - Output Bundle\n")
+                    f.write("See output.json for full data.\n")
+        except Exception as e:
+            print(f"Error creating README: {e}")
+
+        job_manager.update_job(job_id, JobStatus.COMPLETED, progress=100)
+
+    except subprocess.TimeoutExpired:
+        error_msg = "Processing timeout. Please try with smaller inputs."
+        job_manager.update_job(job_id, JobStatus.FAILED, error=error_msg)
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Pipeline failed: {e.stderr or str(e)}"
         job_manager.update_job(job_id, JobStatus.FAILED, error=error_msg)
     except Exception as e:
         error_msg = f"Unexpected error: {str(e)}"
@@ -254,14 +657,28 @@ def upload_file():
         }), 400
 
     try:
-        # Save file
-        input_path = os.path.join(
-            app.config['UPLOAD_FOLDER'], 'input.json'
+        # Best-effort cleanup before allocating new storage.
+        cleanup_job_folders(
+            max_age_hours=JOBS_MAX_AGE_HOURS,
+            max_total_mb=JOBS_MAX_TOTAL_MB,
         )
-        file.save(input_path)
 
         # Create background job
         job_id = job_manager.create_job()
+        paths = job_paths(job_id)
+        os.makedirs(paths['uploads_dir'], exist_ok=True)
+        os.makedirs(paths['output_dir'], exist_ok=True)
+
+        # Save upload into per-job sandbox
+        file.save(paths['input_json_path'])
+
+        job_manager.set_job_paths(
+            job_id=job_id,
+            work_dir=paths['work_dir'],
+            input_json_path=paths['input_json_path'],
+            config_ini_path=paths['config_ini_path'],
+            output_dir=paths['output_dir'],
+        )
 
         # Start background processing
         thread = threading.Thread(
@@ -288,6 +705,12 @@ def upload_file():
 def upload_json():
     """Upload JSON from editor and start background processing"""
     try:
+        # Best-effort cleanup before allocating new storage.
+        cleanup_job_folders(
+            max_age_hours=JOBS_MAX_AGE_HOURS,
+            max_total_mb=JOBS_MAX_TOTAL_MB,
+        )
+
         data = request.get_json()
         if not data:
             return jsonify({
@@ -319,15 +742,23 @@ def upload_json():
                 'error': f'Missing required fields: {fields_str}'
             }), 400
 
-        # Save JSON to file
-        input_path = os.path.join(
-            app.config['UPLOAD_FOLDER'], 'input.json'
-        )
-        with open(input_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4)
-
         # Create background job
         job_id = job_manager.create_job()
+        paths = job_paths(job_id)
+        os.makedirs(paths['uploads_dir'], exist_ok=True)
+        os.makedirs(paths['output_dir'], exist_ok=True)
+
+        # Save JSON into per-job sandbox
+        with open(paths['input_json_path'], 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+
+        job_manager.set_job_paths(
+            job_id=job_id,
+            work_dir=paths['work_dir'],
+            input_json_path=paths['input_json_path'],
+            config_ini_path=paths['config_ini_path'],
+            output_dir=paths['output_dir'],
+        )
 
         # Start background processing
         thread = threading.Thread(
@@ -348,6 +779,85 @@ def upload_json():
             'success': False,
             'error': 'Invalid JSON format'
         }), 400
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'An unexpected error occurred: {str(e)}'
+        }), 500
+
+
+@app.route('/upload-multimodal', methods=['POST'])
+def upload_multimodal():
+    """Upload ZIP + JSON for multimodal processing"""
+    if 'zip_file' not in request.files or 'json_file' not in request.files:
+        return jsonify({'success': False, 'error': 'Missing files'}), 400
+
+    zip_file = request.files['zip_file']
+    json_file = request.files['json_file']
+
+    if zip_file.filename == '' or json_file.filename == '':
+        return jsonify({'success': False, 'error': 'No selected file'}), 400
+
+    if not zip_file.filename.lower().endswith('.zip'):
+        return jsonify({'success': False, 'error': 'Invalid ZIP file'}), 400
+    if not json_file.filename.lower().endswith('.json'):
+        return jsonify({'success': False, 'error': 'Invalid JSON file'}), 400
+
+    # Verify reCAPTCHA
+    recaptcha_response = request.form.get('g-recaptcha-response')
+    if not verify_recaptcha(recaptcha_response):
+        return jsonify({
+            'success': False,
+            'error': 'reCAPTCHA verification failed. Please try again.'
+        }), 400
+
+    try:
+        cleanup_job_folders(
+            max_age_hours=JOBS_MAX_AGE_HOURS,
+            max_total_mb=JOBS_MAX_TOTAL_MB,
+        )
+
+        # Create job
+        job_id = job_manager.create_job()
+        paths = job_paths(job_id)
+        os.makedirs(paths['uploads_dir'], exist_ok=True)
+        os.makedirs(paths['output_dir'], exist_ok=True)
+
+        # Save files
+        zip_save_path = os.path.join(paths['uploads_dir'], 'distribution_images.zip')
+        min_json_save_path = os.path.join(paths['uploads_dir'], 'minimal_config.json')
+        
+        zip_file.save(zip_save_path)
+        json_file.save(min_json_save_path)
+
+        job_manager.set_job_paths(
+            job_id=job_id,
+            work_dir=paths['work_dir'],
+            input_json_path=paths['input_json_path'], # This will be the merged result
+            config_ini_path=paths['config_ini_path'],
+            output_dir=paths['output_dir'],
+        )
+        
+        job_manager.set_extra_data(
+            job_id=job_id,
+            zip_path=zip_save_path,
+            min_json_path=min_json_save_path
+        )
+
+        # Start background processing
+        thread = threading.Thread(
+            target=process_multimodal_background,
+            args=(job_id,),
+            daemon=True
+        )
+        thread.start()
+
+        return jsonify({
+            'success': True,
+            'job_id': job_id,
+            'message': 'Files uploaded. Processing started in background.'
+        }), 200
+
     except Exception as e:
         return jsonify({
             'success': False,
@@ -377,6 +887,14 @@ def get_job_status(job_id):
 
     if job['status'] == JobStatus.COMPLETED.value:
         response['message'] = 'Processing completed successfully!'
+        response['downloads'] = {
+            'bundle_zip': f'/download/{job_id}/bundle.zip',
+            'files': {
+                'output.json': f'/download/{job_id}?file=output.json',
+                'ACM.txt': f'/download/{job_id}?file=ACM.txt',
+                'access_data.txt': f'/download/{job_id}?file=access_data.txt',
+            }
+        }
     elif job['status'] == JobStatus.FAILED.value:
         response['error'] = job.get('error', 'Processing failed')
     elif job['status'] in [JobStatus.PROCESSING.value,
@@ -386,10 +904,10 @@ def get_job_status(job_id):
     return jsonify(response), 200
 
 
-@app.route('/download')
-def download_outputs():
+@app.route('/download/<job_id>')
+def download_outputs(job_id):
     """
-    Download a single output file from outputs/.
+    Download a single output file from a job's outputs directory.
 
     - Default: output.json
     - Also supports other known output artifacts via `?file=...`
@@ -403,14 +921,22 @@ def download_outputs():
     # Allow only known artifacts to avoid exposing arbitrary files.
     allowed_files = {
         'output.json',
-        'rules_temp.txt',
         'ACM.txt',
         'access_data.txt',
     }
     if requested not in allowed_files:
         return "Requested file is not available.", 404
 
-    file_path = os.path.join(app.config['OUTPUT_FOLDER'], requested)
+    job = job_manager.get_job(job_id)
+    if not job:
+        return "Job not found.", 404
+    if job.get('status') != JobStatus.COMPLETED.value:
+        return "Job is not completed yet.", 409
+
+    outputs_dir = job.get('output_dir') or os.path.join(
+        JOBS_FOLDER, job_id, 'outputs'
+    )
+    file_path = os.path.join(outputs_dir, requested)
     if not os.path.exists(file_path):
         return (
             f"Error: {requested} not found. "
@@ -418,35 +944,41 @@ def download_outputs():
             404,
         )
 
-    return send_from_directory(app.config['OUTPUT_FOLDER'], requested)
+    return send_from_directory(outputs_dir, requested)
 
 
-@app.route('/download/bundle.zip')
-def download_bundle():
+@app.route('/download/<job_id>/bundle.zip')
+def download_bundle(job_id):
     """
     Download a zip containing:
-      - outputs/* (output.json, rules_temp.txt, ACM.txt, access_data.txt)
+      - job outputs/* (output.json, rules_temp.txt, ACM.txt, access_data.txt)
     """
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    outputs_dir = os.path.join(base_dir, app.config['OUTPUT_FOLDER'])
+    job = job_manager.get_job(job_id)
+    if not job:
+        return "Job not found.", 404
+    if job.get('status') != JobStatus.COMPLETED.value:
+        return "Job is not completed yet.", 409
+
+    outputs_dir = job.get('output_dir') or os.path.join(
+        JOBS_FOLDER, job_id, 'outputs'
+    )
 
     mem = io.BytesIO()
     with zipfile.ZipFile(
         mem, mode='w', compression=zipfile.ZIP_DEFLATED
     ) as zf:
         if os.path.isdir(outputs_dir):
-            allowed_files = {
-                'output.json',
-                'rules_temp.txt',
-                'ACM.txt',
-                'access_data.txt',
-            }
-            for name in sorted(allowed_files):
-                abs_path = os.path.join(outputs_dir, name)
-                if not os.path.exists(abs_path):
-                    continue
-                rel_path = os.path.relpath(abs_path, base_dir)
-                zf.write(abs_path, rel_path)
+            for root, _dirs, files in os.walk(outputs_dir):
+                for file in files:
+                    if file in ['rules_temp.txt', 'error_summary.json']:
+                        continue
+                    file_path = os.path.join(root, file)
+                    # Create arcname relative to outputs_dir
+                    rel_path = os.path.relpath(file_path, outputs_dir)
+                    # We can put everything under an 'outputs' folder in the zip, or at root.
+                    # The previous code put it under 'outputs'. Let's keep that.
+                    arcname = os.path.join('outputs', rel_path)
+                    zf.write(file_path, arcname)
 
     mem.seek(0)
     return send_file(
