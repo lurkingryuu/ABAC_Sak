@@ -266,10 +266,10 @@ error_report = {
 }
 
 # write JSON summary to outputs folder
-OUT_DIR = _out_dir
-os.makedirs(OUT_DIR, exist_ok=True)
-with open(os.path.join(OUT_DIR, 'error_summary.json'), 'w') as fh:
-    json.dump(error_report, fh, indent=4)
+# OUT_DIR = _out_dir
+# os.makedirs(OUT_DIR, exist_ok=True)
+# with open(os.path.join(OUT_DIR, 'error_summary.json'), 'w') as fh:
+#     json.dump(error_report, fh, indent=4)
 
 print("Error summary written to outputs/error_summary.json")
 

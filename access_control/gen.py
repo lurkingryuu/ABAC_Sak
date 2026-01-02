@@ -240,9 +240,9 @@ output_data["rules"] = rules
 with open(os.path.join(OUTPUT_FOLDER, 'output.json'), 'w') as f:
     json.dump(output_data, f, indent=4)
 
-with open(os.path.join(OUTPUT_FOLDER, "rules_temp.txt"), "w") as file:
-    for rule in rules:
-        file.write(rule + "\n")
+# with open(os.path.join(OUTPUT_FOLDER, "rules_temp.txt"), "w") as file:
+#     for rule in rules:
+#         file.write(rule + "\n")
 
 print("Output generated successfully.")
 

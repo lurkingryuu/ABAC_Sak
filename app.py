@@ -361,7 +361,8 @@ def process_file_background(job_id):
         # NOTE: plot/error-summary generation is intentionally NOT run here.
 
         # Step 3: Generate Plots & README
-        plots_dir = os.path.join(output_dir, 'plots')
+        # plots_dir = os.path.join(output_dir, 'plots')
+        plots_dir = os.path.join(output_dir, 'distribution_attestations', 'plots')
         os.makedirs(plots_dir, exist_ok=True)
         
         script_path = os.path.join(ACCESS_CONTROL_FOLDER, 'plot.py')
@@ -526,11 +527,12 @@ def process_multimodal_background(job_id):
         # The download_bundle function currently zips 'outputs/*', so we should copy comparison images there.
         comparisons_src = os.path.join(handdrawn_output_dir, 'comparisons')
         if os.path.exists(comparisons_src):
-            comparisons_dst = os.path.join(output_dir, 'comparisons')
+            comparisons_dst = os.path.join(output_dir, 'distribution_attestations', 'comparisons')
             shutil.copytree(comparisons_src, comparisons_dst, dirs_exist_ok=True)
 
         # Step 4: Generate Plots & README (for multimodal too)
-        plots_dir = os.path.join(output_dir, 'plots')
+        # plots_dir = os.path.join(output_dir, 'plots')
+        plots_dir = os.path.join(output_dir, 'distribution_attestations', 'plots')
         os.makedirs(plots_dir, exist_ok=True)
         
         script_path = os.path.join(ACCESS_CONTROL_FOLDER, 'plot.py')
@@ -559,7 +561,7 @@ def process_multimodal_background(job_id):
             if os.path.exists(template_path):
                 shutil.copy(template_path, readme_path)
             else:
-                 # Fallback if template is missing
+                # Fallback if template is missing
                 with open(readme_path, 'w') as f:
                     f.write("ABAC Policy Mining - Output Bundle\n")
                     f.write("See output.json for full data.\n")
@@ -889,7 +891,6 @@ def get_job_status(job_id):
             'bundle_zip': f'/download/{job_id}/bundle.zip',
             'files': {
                 'output.json': f'/download/{job_id}?file=output.json',
-                'rules_temp.txt': f'/download/{job_id}?file=rules_temp.txt',
                 'ACM.txt': f'/download/{job_id}?file=ACM.txt',
                 'access_data.txt': f'/download/{job_id}?file=access_data.txt',
             }
@@ -920,7 +921,6 @@ def download_outputs(job_id):
     # Allow only known artifacts to avoid exposing arbitrary files.
     allowed_files = {
         'output.json',
-        'rules_temp.txt',
         'ACM.txt',
         'access_data.txt',
     }
@@ -968,8 +968,10 @@ def download_bundle(job_id):
         mem, mode='w', compression=zipfile.ZIP_DEFLATED
     ) as zf:
         if os.path.isdir(outputs_dir):
-            for root, dirs, files in os.walk(outputs_dir):
+            for root, _dirs, files in os.walk(outputs_dir):
                 for file in files:
+                    if file in ['rules_temp.txt', 'error_summary.json']:
+                        continue
                     file_path = os.path.join(root, file)
                     # Create arcname relative to outputs_dir
                     rel_path = os.path.relpath(file_path, outputs_dir)
