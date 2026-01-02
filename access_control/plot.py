@@ -19,7 +19,8 @@ _out_dir = os.environ.get(ENV_OUTPUT_DIR) or os.path.join(BASE_DIR, '../outputs'
 OUTPUT_JSON_PATH = os.path.join(_out_dir, 'output.json')
 
 CONFIG_PATH = os.environ.get(ENV_CONFIG_INI) or os.path.join(BASE_DIR, 'config.ini')
-PLOTS_FOLDER = os.path.join(BASE_DIR, '../plots')
+ENV_PLOTS_DIR = "ABAC_PLOTS_DIR"
+PLOTS_FOLDER = os.environ.get(ENV_PLOTS_DIR) or os.path.join(BASE_DIR, '../plots')
 os.makedirs(PLOTS_FOLDER, exist_ok=True)
 
 # --- Read config ---
@@ -265,7 +266,7 @@ error_report = {
 }
 
 # write JSON summary to outputs folder
-OUT_DIR = os.path.join(BASE_DIR, '../outputs')
+OUT_DIR = _out_dir
 os.makedirs(OUT_DIR, exist_ok=True)
 with open(os.path.join(OUT_DIR, 'error_summary.json'), 'w') as fh:
     json.dump(error_report, fh, indent=4)

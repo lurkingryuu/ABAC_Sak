@@ -165,6 +165,7 @@ os.makedirs(JOBS_FOLDER, exist_ok=True)
 ENV_INPUT_JSON = "ABAC_INPUT_JSON"
 ENV_CONFIG_INI = "ABAC_CONFIG_INI"
 ENV_OUTPUT_DIR = "ABAC_OUTPUT_DIR"
+ENV_PLOTS_DIR = "ABAC_PLOTS_DIR"
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
@@ -358,6 +359,45 @@ def process_file_background(job_id):
         )
 
         # NOTE: plot/error-summary generation is intentionally NOT run here.
+
+        # Step 3: Generate Plots & README
+        plots_dir = os.path.join(output_dir, 'plots')
+        os.makedirs(plots_dir, exist_ok=True)
+        
+        script_path = os.path.join(ACCESS_CONTROL_FOLDER, 'plot.py')
+        
+        env_plots = env.copy()
+        env_plots[ENV_PLOTS_DIR] = plots_dir
+        
+        try:
+            subprocess.run(
+                [python_exe, script_path, "--plots"],
+                check=False, # Don't fail the job if plotting fails
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=PROCESS_TIMEOUT,
+                env=env_plots,
+            )
+        except Exception as e:
+            # Log error but don't fail job
+            print(f"Plot generation failed: {e}")
+
+        # Generate README
+        readme_path = os.path.join(output_dir, 'README.txt')
+        template_path = os.path.join(ACCESS_CONTROL_FOLDER, 'README_template.txt')
+        
+        try:
+            if os.path.exists(template_path):
+                shutil.copy(template_path, readme_path)
+            else:
+                # Fallback if template is missing
+                with open(readme_path, 'w') as f:
+                    f.write("ABAC Policy Mining - Output Bundle\n")
+                    f.write("See output.json for full data.\n")
+        except Exception as e:
+            print(f"Error creating README: {e}")
+
         job_manager.update_job(job_id, JobStatus.COMPLETED, progress=100)
 
     except subprocess.TimeoutExpired:
@@ -483,12 +523,48 @@ def process_multimodal_background(job_id):
         
         # Also copy the comparison images to the main output directory 
         # so they can be included in the bundle if desired, or just left in handdrawn_output
-        # For now, we leave them in handdrawn_output but maybe we want to zip them?
         # The download_bundle function currently zips 'outputs/*', so we should copy comparison images there.
         comparisons_src = os.path.join(handdrawn_output_dir, 'comparisons')
         if os.path.exists(comparisons_src):
             comparisons_dst = os.path.join(output_dir, 'comparisons')
             shutil.copytree(comparisons_src, comparisons_dst, dirs_exist_ok=True)
+
+        # Step 4: Generate Plots & README (for multimodal too)
+        plots_dir = os.path.join(output_dir, 'plots')
+        os.makedirs(plots_dir, exist_ok=True)
+        
+        script_path = os.path.join(ACCESS_CONTROL_FOLDER, 'plot.py')
+        
+        env_plots = env.copy()
+        env_plots[ENV_PLOTS_DIR] = plots_dir
+        
+        try:
+            subprocess.run(
+                [python_exe, script_path, "--plots"],
+                check=False, 
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=PROCESS_TIMEOUT,
+                env=env_plots,
+            )
+        except Exception as e:
+            print(f"Plot generation failed: {e}")
+
+        # Generate README
+        readme_path = os.path.join(output_dir, 'README.txt')
+        template_path = os.path.join(ACCESS_CONTROL_FOLDER, 'README_template.txt')
+        
+        try:
+            if os.path.exists(template_path):
+                shutil.copy(template_path, readme_path)
+            else:
+                 # Fallback if template is missing
+                with open(readme_path, 'w') as f:
+                    f.write("ABAC Policy Mining - Output Bundle\n")
+                    f.write("See output.json for full data.\n")
+        except Exception as e:
+            print(f"Error creating README: {e}")
 
         job_manager.update_job(job_id, JobStatus.COMPLETED, progress=100)
 
@@ -892,18 +968,15 @@ def download_bundle(job_id):
         mem, mode='w', compression=zipfile.ZIP_DEFLATED
     ) as zf:
         if os.path.isdir(outputs_dir):
-            allowed_files = {
-                'output.json',
-                'rules_temp.txt',
-                'ACM.txt',
-                'access_data.txt',
-            }
-            for name in sorted(allowed_files):
-                abs_path = os.path.join(outputs_dir, name)
-                if not os.path.exists(abs_path):
-                    continue
-                # Make the zip contain files under outputs/
-                zf.write(abs_path, os.path.join('outputs', name))
+            for root, dirs, files in os.walk(outputs_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    # Create arcname relative to outputs_dir
+                    rel_path = os.path.relpath(file_path, outputs_dir)
+                    # We can put everything under an 'outputs' folder in the zip, or at root.
+                    # The previous code put it under 'outputs'. Let's keep that.
+                    arcname = os.path.join('outputs', rel_path)
+                    zf.write(file_path, arcname)
 
     mem.seek(0)
     return send_file(

@@ -4,6 +4,8 @@ import json
 from typing import Literal, Union
 from google import genai
 from pydantic import BaseModel, Field, TypeAdapter
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats as stats
