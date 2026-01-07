@@ -1,62 +1,62 @@
 {
-    "subject_size": 200,
-    "object_size": 150,
-    "environment_size": 50,
-    "rules_count": 30,
+    "subject_size": 20,
+    "object_size": 15,
+    "environment_size": 5,
+    "rules_count": 8,
     "subject_attributes_count": 6,
     "object_attributes_count": 5,
     "environment_attributes_count": 4,
     "subject_attributes_values": [
-        30,
-        20,
-        10,
-        18,
-        5,
-        10
-    ],
-    "object_attributes_values": [
-        10,
+        6,
         5,
         4,
         3,
-        6
+        2,
+        3
+    ],
+    "object_attributes_values": [
+        4,
+        3,
+        2,
+        2,
+        3
     ],
     "environment_attributes_values": [
-        5,
-        6,
-        4,
-        7
+        2,
+        2,
+        2,
+        1
     ],
     "subject_distributions": [
         {
             "distribution": "N",
-            "mean": 15,
-            "variance": 4
+            "mean": 4,
+            "variance": 2
         },
         {
             "distribution": "P",
-            "lambda": 10
+            "lambda": 4
         },
         {
             "distribution": "U"
         },
         {
             "distribution": "N",
-            "mean": 9,
-            "variance": 5
+            "mean": 3,
+            "variance": 2
         },
         {
             "distribution": "U"
         },
         {
             "distribution": "P",
-            "lambda": 5
+            "lambda": 2
         }
     ],
     "object_distributions": [
         {
             "distribution": "P",
-            "lambda": 6
+            "lambda": 3
         },
         {
             "distribution": "N"
@@ -66,7 +66,7 @@
         },
         {
             "distribution": "P",
-            "lambda": 2
+            "lambda": 1
         },
         {
             "distribution": "U"
@@ -75,12 +75,12 @@
     "environment_distributions": [
         {
             "distribution": "N",
-            "mean": 2,
+            "mean": 1,
             "variance": 1
         },
         {
             "distribution": "P",
-            "lambda": 3
+            "lambda": 2
         },
         {
             "distribution": "U"
