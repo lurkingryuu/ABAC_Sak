@@ -5,7 +5,22 @@ import os
 import random
 import numpy as np
 from math import factorial,exp
-from scipy.stats import truncnorm
+try:
+    from scipy.stats import truncnorm
+except ImportError:
+    # Fallback implementation of truncated normal using rejection sampling
+    # if scipy is not available. This is useful in constrained environments.
+    class TruncnormFallback:
+        @staticmethod
+        def rvs(a, b, loc=0, scale=1):
+            # a and b are bounds in standard units: (low - loc) / scale, (high - loc) / scale
+            low = loc + a * scale
+            high = loc + b * scale
+            while True:
+                x = np.random.normal(loc, scale)
+                if low <= x <= high:
+                    return x
+    truncnorm = TruncnormFallback()
 import gen_rules
 
 ENV_CONFIG_INI = "ABAC_CONFIG_INI"

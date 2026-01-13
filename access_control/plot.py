@@ -8,7 +8,34 @@ import argparse
 import numpy as np
 import math
 from collections import defaultdict
-from scipy.stats import truncnorm
+try:
+    from scipy.stats import truncnorm
+except ImportError:
+    # Fallback implementation of truncated normal functions if scipy is not available.
+    class TruncnormFallback:
+        @staticmethod
+        def _phi(x):
+            """Standard normal CDF."""
+            return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+        @staticmethod
+        def cdf(x, a, b, loc=0, scale=1):
+            """
+            Truncated normal CDF on [low, high] where:
+            a = (low - loc) / scale
+            b = (high - loc) / scale
+            """
+            phi_x = TruncnormFallback._phi((x - loc) / scale)
+            phi_a = TruncnormFallback._phi(a)
+            phi_b = TruncnormFallback._phi(b)
+            
+            if phi_b <= phi_a:
+                return 0.0
+            
+            val = (phi_x - phi_a) / (phi_b - phi_a)
+            return max(0.0, min(1.0, val))
+            
+    truncnorm = TruncnormFallback()
 
 # --- Paths ---
 BASE_DIR = os.path.dirname(__file__)

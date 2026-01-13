@@ -9,7 +9,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 import math
 from collections import defaultdict
-from scipy.stats import norm
+try:
+    from scipy.stats import norm
+except ImportError:
+    # Fallback implementation of normal CDF if scipy is not available.
+    class NormFallback:
+        @staticmethod
+        def cdf(x, loc=0, scale=1):
+            """Normal CDF."""
+            return 0.5 * (1 + math.erf((x - loc) / (scale * math.sqrt(2))))
+    norm = NormFallback()
 
 # --- Paths ---
 BASE_DIR = os.path.dirname(__file__)

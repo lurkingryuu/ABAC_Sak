@@ -140,7 +140,16 @@ def get_python_executable():
     Get the correct Python executable path.
     On PythonAnywhere/uwsgi, sys.executable points to uwsgi, not Python.
     """
-    # If sys.executable is uwsgi, find the actual Python interpreter
+    # 1. If we are in a virtual environment, prefer the python from there.
+    # sys.prefix points to the venv root.
+    if hasattr(sys, 'prefix') and hasattr(sys, 'base_prefix') and sys.prefix != sys.base_prefix:
+        # Check for bin/python (Linux/macOS) or Scripts/python.exe (Windows)
+        for sub in ['bin/python', 'bin/python3', 'Scripts/python.exe']:
+            venv_python = os.path.join(sys.prefix, sub)
+            if os.path.exists(venv_python):
+                return venv_python
+
+    # 2. If sys.executable is uwsgi (common on PythonAnywhere), find the actual Python interpreter
     if 'uwsgi' in sys.executable.lower():
         # Try to find python3 in PATH
         python_path = shutil.which('python3')
@@ -148,6 +157,8 @@ def get_python_executable():
             return python_path
         # Fallback to 'python3' command
         return 'python3'
+
+    # 3. Default to sys.executable
     return sys.executable
 
 
