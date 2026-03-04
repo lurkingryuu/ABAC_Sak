@@ -1,5 +1,5 @@
 {
-    "$schema": "/schema.json",
+    "$schema": "https://abacsim.pythonanywhere.com/schema.json",
     "subject_size": 20,
     "object_size": 15,
     "environment_size": 5,
