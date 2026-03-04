@@ -2,6 +2,7 @@
     "subject_size": 200,
     "object_size": 150,
     "environment_size": 50,
+    "rules_count": 30,
     "subject_attributes_count": 6,
     "object_attributes_count": 5,
     "environment_attributes_count": 4,
@@ -87,6 +88,5 @@
         {
             "distribution": "N"
         }
-    ],
-    "rules_count": 30
+    ]
 }
