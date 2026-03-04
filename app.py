@@ -26,6 +26,9 @@ from dotenv import load_dotenv
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'handdrawn'))
 from handdrawn.process_zip import process_zip_file  # type: ignore
 
+import tracking
+tracking.init_db()
+
 try:
     load_dotenv()
 except PermissionError:
@@ -38,6 +41,25 @@ signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
 
 app = Flask(__name__)
+
+@app.before_request
+def start_timer():
+    request.start_time = time.time()
+
+@app.after_request
+def log_request(response):
+    if hasattr(request, 'start_time'):
+        duration_ms = (time.time() - request.start_time) * 1000
+        # Ignore static files to reduce noise
+        if request.endpoint and request.endpoint != 'static':
+            tracking.log_api_request(
+                endpoint=request.endpoint,
+                method=request.method,
+                ip_address=request.remote_addr,
+                user_agent=request.user_agent.string if request.user_agent else '',
+                duration_ms=duration_ms
+            )
+    return response
 
 # Configure timeouts (1 hour timeout for subprocess calls / background jobs)
 PROCESS_TIMEOUT = 3600
@@ -63,7 +85,7 @@ class JobManager:
         self.jobs = {}
         self.lock = threading.Lock()
 
-    def create_job(self):
+    def create_job(self, job_type="unknown"):
         """Create a new job and return its ID"""
         job_id = str(uuid.uuid4())
         with self.lock:
@@ -79,6 +101,7 @@ class JobManager:
                 'config_ini_path': None,
                 'output_dir': None,
             }
+        tracking.log_job_creation(job_id, job_type)
         return job_id
 
     def update_job(self, job_id, status, error=None, progress=None):
@@ -93,6 +116,7 @@ class JobManager:
                     self.jobs[job_id]['error'] = error
                 if progress is not None:
                     self.jobs[job_id]['progress'] = progress
+                tracking.update_job_status(job_id, status_val, error)
 
     def get_job(self, job_id):
         """Get job status"""
@@ -271,6 +295,9 @@ def _start_cleanup_thread() -> None:
                     max_age_hours=JOBS_MAX_AGE_HOURS,
                     max_total_mb=JOBS_MAX_TOTAL_MB,
                 )
+                # Keep usage database from growing forever
+                import tracking
+                tracking.cleanup_old_records(days=30)
             except Exception:
                 # Never let cleanup kill the process.
                 pass
@@ -321,6 +348,15 @@ def process_file_background(job_id):
 
         if not input_json_path or not config_ini_path or not output_dir:
             raise RuntimeError("Job paths not initialized")
+
+        # Log input metrics
+        try:
+            file_size = os.path.getsize(input_json_path)
+            with open(input_json_path, 'r') as f:
+                data = json.load(f)
+            tracking.update_job_metrics(job_id, file_size_bytes=file_size, data=data)
+        except Exception as e:
+            print(f"Failed to log metrics: {e}")
 
         job_manager.update_job(job_id, JobStatus.PROCESSING, progress=25)
 
@@ -490,6 +526,15 @@ def process_multimodal_background(job_id):
         # Save merged input.json
         with open(input_json_path, 'w') as f:
             json.dump(final_config, f, indent=4)
+            
+        # Log metrics
+        try:
+            zip_size = os.path.getsize(zip_path)
+            json_size = os.path.getsize(min_json_path)
+            total_size = zip_size + json_size
+            tracking.update_job_metrics(job_id, file_size_bytes=total_size, data=final_config)
+        except Exception as e:
+            print(f"Failed to log metrics: {e}")
             
         job_manager.update_job(job_id, JobStatus.PROCESSING, progress=40)
 
@@ -681,7 +726,7 @@ def upload_file():
         )
 
         # Create background job
-        job_id = job_manager.create_job()
+        job_id = job_manager.create_job(job_type="json_upload")
         paths = job_paths(job_id)
         os.makedirs(paths['uploads_dir'], exist_ok=True)
         os.makedirs(paths['output_dir'], exist_ok=True)
@@ -761,7 +806,7 @@ def upload_json():
             }), 400
 
         # Create background job
-        job_id = job_manager.create_job()
+        job_id = job_manager.create_job(job_type="json_editor")
         paths = job_paths(job_id)
         os.makedirs(paths['uploads_dir'], exist_ok=True)
         os.makedirs(paths['output_dir'], exist_ok=True)
@@ -836,7 +881,7 @@ def upload_multimodal():
         )
 
         # Create job
-        job_id = job_manager.create_job()
+        job_id = job_manager.create_job(job_type="multimodal")
         paths = job_paths(job_id)
         os.makedirs(paths['uploads_dir'], exist_ok=True)
         os.makedirs(paths['output_dir'], exist_ok=True)

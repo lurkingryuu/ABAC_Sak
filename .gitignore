@@ -58,6 +58,8 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+usage_tracking.db
+usage_tracking.db-journal
 
 # Flask stuff:
 instance/
@@ -165,3 +167,4 @@ ehthumbs.db
 Thumbs.db
 
 jobs/*config.ini
+jobs/
