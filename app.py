@@ -624,6 +624,12 @@ def get_recaptcha_site_key():
     return jsonify({'site_key': RECAPTCHA_SITE_KEY}), 200
 
 
+@app.route('/schema.json', methods=['GET'])
+def get_schema_json():
+    """Return the JSON schema publicly"""
+    return send_from_directory('static', 'schema.json')
+
+
 @app.route('/example', methods=['GET'])
 def get_example_json():
     """Return example JSON (dataset/input5.json)"""
@@ -741,7 +747,8 @@ def upload_json():
         required_fields = [
             'subject_size', 'object_size', 'environment_size',
             'subject_attributes_count', 'object_attributes_count',
-            'environment_attributes_count', 'rules_count'
+            'environment_attributes_count', 'accepted_rules_count',
+            'denied_rules_count'
         ]
         missing_fields = [
             field for field in required_fields if field not in data

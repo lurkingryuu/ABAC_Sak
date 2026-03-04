@@ -1,0 +1,108 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "MuSimA ABAC Input Schema",
+    "type": "object",
+    "properties": {
+        "subject_size": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "object_size": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "environment_size": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "accepted_rules_count": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "denied_rules_count": {
+            "type": "integer",
+            "minimum": 0
+        },
+        "subject_attributes_count": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "object_attributes_count": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "environment_attributes_count": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "subject_attributes_values": {
+            "type": "array",
+            "items": {
+                "type": "integer",
+                "minimum": 1
+            }
+        },
+        "object_attributes_values": {
+            "type": "array",
+            "items": {
+                "type": "integer",
+                "minimum": 1
+            }
+        },
+        "environment_attributes_values": {
+            "type": "array",
+            "items": {
+                "type": "integer",
+                "minimum": 1
+            }
+        },
+        "subject_distributions": {
+            "$ref": "#/definitions/distribution_array"
+        },
+        "object_distributions": {
+            "$ref": "#/definitions/distribution_array"
+        },
+        "environment_distributions": {
+            "$ref": "#/definitions/distribution_array"
+        }
+    },
+    "required": [
+        "subject_size",
+        "object_size",
+        "environment_size",
+        "accepted_rules_count",
+        "denied_rules_count"
+    ],
+    "definitions": {
+        "distribution_array": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "distribution": {
+                        "type": "string",
+                        "enum": [
+                            "N",
+                            "P",
+                            "U"
+                        ]
+                    },
+                    "mean": {
+                        "type": "number"
+                    },
+                    "variance": {
+                        "type": "number",
+                        "minimum": 0
+                    },
+                    "lambda": {
+                        "type": "number",
+                        "minimum": 0
+                    }
+                },
+                "required": [
+                    "distribution"
+                ]
+            }
+        }
+    }
+}

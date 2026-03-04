@@ -1,8 +1,10 @@
 {
+    "$schema": "/schema.json",
     "subject_size": 20,
     "object_size": 15,
     "environment_size": 5,
-    "rules_count": 8,
+    "accepted_rules_count": 5,
+    "denied_rules_count": 3,
     "subject_attributes_count": 6,
     "object_attributes_count": 5,
     "environment_attributes_count": 4,
