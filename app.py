@@ -672,7 +672,10 @@ def get_recaptcha_site_key():
 @app.route('/schema.json', methods=['GET'])
 def get_schema_json():
     """Return the JSON schema publicly"""
-    return send_from_directory('static', 'schema.json')
+    from flask import make_response
+    response = make_response(send_from_directory('static', 'schema.json'))
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    return response
 
 
 @app.route('/example', methods=['GET'])

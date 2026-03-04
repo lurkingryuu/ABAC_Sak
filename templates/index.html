@@ -348,6 +348,13 @@
             }
             
             require(['vs/editor/editor.main'], function () {
+                // Enable schema request for external $schema references
+                monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+                    validate: true,
+                    allowComments: false,
+                    enableSchemaRequest: true
+                });
+
                 if (editorContainer) {
                 monacoEditor = monaco.editor.create(editorContainer, {
                     value: '',
