@@ -2,6 +2,7 @@
 import configparser
 import json
 import os
+import sys
 import random
 import numpy as np
 from math import factorial,exp
@@ -28,6 +29,7 @@ import gen_rules
 
 ENV_CONFIG_INI = "ABAC_CONFIG_INI"
 ENV_OUTPUT_DIR = "ABAC_OUTPUT_DIR"
+ENABLE_MEANINGFUL_NAMES = False
 
 # config.ini: default is access_control/config.ini, but can be overridden per-job.
 config_path = os.environ.get(ENV_CONFIG_INI) or os.path.join(
@@ -322,6 +324,87 @@ with open(os.path.join(OUTPUT_FOLDER, 'output.json'), 'w') as f:
 #         file.write(rule + "\n")
 
 print("Output generated successfully.")
+
+if not ENABLE_MEANINGFUL_NAMES:
+    # Generate only the indexed outputs and skip readable-name generation.
+    A = [[[0] * n3 for _ in range(n2)] for _ in range(n1)]
+
+    no_of_ones = 0
+
+    def satisfies_rule(rule, SA1, OA1, EA1):
+        rule_parts = rule.split(", ")
+        for part in rule_parts:
+            key, value = part.split(" = ")
+            if key.startswith("SA_") and value not in SA1 and value != '*':
+                return False
+            if key.startswith("OA_") and value not in OA1 and value != '*':
+                return False
+            if key.startswith("EA_") and value not in EA1 and value != '*':
+                return False
+        return True
+
+    def fill_matrix_with_rules(A, SV, OV, EV, accepted_rules, denied_rules, n1, n2, n3):
+        global no_of_ones
+
+        has_accepted = len(accepted_rules) > 0
+        has_denied = len(denied_rules) > 0
+
+        for i in range(n1):
+            for j in range(n2):
+                for k in range(n3):
+                    SA1 = SV[f"S_{i + 1}"]
+                    OA1 = OV[f"O_{j + 1}"]
+                    EA1 = EV[f"E_{k + 1}"]
+
+                    matches_accepted = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in accepted_rules) if has_accepted else False
+                    matches_denied = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in denied_rules) if has_denied else False
+
+                    if not has_accepted and not has_denied:
+                        A[i][j][k] = 0
+                    elif has_accepted and not has_denied:
+                        A[i][j][k] = 1 if matches_accepted else 0
+                    elif not has_accepted and has_denied:
+                        A[i][j][k] = 0 if matches_denied else 1
+                    else:
+                        A[i][j][k] = 1 if matches_accepted else 0
+
+                    no_of_ones += A[i][j][k]
+
+    fill_matrix_with_rules(A, SV, OV, EV, accepted_rules, denied_rules, n1, n2, n3)
+    print("No. of ones in ACM : ", no_of_ones)
+
+    with open(os.path.join(OUTPUT_FOLDER, "ACM.txt"), "w") as file:
+        for i in range(n1):
+            for row in A[i]:
+                file.write(" ".join(map(str, row)) + "\n")
+            file.write("\n")
+
+    def prepare_access_data(S, O, E, SV, OV, EV, A):
+        access_data = []
+        for i in range(len(S)):
+            for j in range(len(O)):
+                for k in range(len(E)):
+                    subject = S[i]
+                    obj = O[j]
+                    env = E[k]
+                    T = SV[subject] + OV[obj] + EV[env] + [A[i][j][k]]
+                    access_data.append(T)
+        return access_data
+
+    access_data = prepare_access_data(S, O, E, SV, OV, EV, A)
+    with open(os.path.join(OUTPUT_FOLDER, "access_data.txt"), "w") as file:
+        for row in access_data:
+            file.write(" ".join(map(str, row)) + "\n")
+
+    print("Skipping meaningful-name generation and related output files.")
+    print("✓ Regular access_data written to access_data.txt")
+    print("\n" + "=" * 60)
+    print("SUMMARY OF GENERATED FILES")
+    print("=" * 60)
+    print("✓ output.json - Regular ABAC data")
+    print("✓ access_data.txt - Regular access control data")
+    print("✓ ACM.txt - Access Control Matrix")
+    sys.exit(0)
 
 
 
