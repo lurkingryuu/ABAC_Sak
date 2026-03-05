@@ -37,8 +37,8 @@ def init_db():
             subject_size INTEGER,
             object_size INTEGER,
             environment_size INTEGER,
-            accepted_rules_count INTEGER,
-            denied_rules_count INTEGER,
+            permit_rules_count INTEGER,
+            deny_rules_count INTEGER,
             created_at DATETIME,
             updated_at DATETIME,
             completed_at DATETIME,
@@ -88,15 +88,15 @@ def update_job_metrics(job_id, file_size_bytes=None, data=None):
         subject_size = None
         object_size = None
         environment_size = None
-        accepted_rules_count = None
-        denied_rules_count = None
+        permit_rules_count = None
+        deny_rules_count = None
         
         if data:
             subject_size = data.get('subject_size')
             object_size = data.get('object_size')
             environment_size = data.get('environment_size')
-            accepted_rules_count = data.get('accepted_rules_count')
-            denied_rules_count = data.get('denied_rules_count')
+            permit_rules_count = data.get('permit_rules_count')
+            deny_rules_count = data.get('deny_rules_count')
             
         c.execute('''
             UPDATE jobs_tracking 
@@ -105,10 +105,10 @@ def update_job_metrics(job_id, file_size_bytes=None, data=None):
                 subject_size = COALESCE(?, subject_size),
                 object_size = COALESCE(?, object_size),
                 environment_size = COALESCE(?, environment_size),
-                accepted_rules_count = COALESCE(?, accepted_rules_count),
-                denied_rules_count = COALESCE(?, denied_rules_count)
+                permit_rules_count = COALESCE(?, permit_rules_count),
+                deny_rules_count = COALESCE(?, deny_rules_count)
             WHERE job_id = ?
-        ''', (now, file_size_bytes, subject_size, object_size, environment_size, accepted_rules_count, denied_rules_count, job_id))
+        ''', (now, file_size_bytes, subject_size, object_size, environment_size, permit_rules_count, deny_rules_count, job_id))
         conn.commit()
     except Exception as e:
         print(f"Failed to update job metrics: {e}")
@@ -164,7 +164,7 @@ def get_stats():
     stats['total_job_file_bytes'] = size_stats['total_size_bytes']
     
     # Rule metrics
-    c.execute("SELECT AVG(accepted_rules_count + denied_rules_count) as avg_total_rules FROM jobs_tracking WHERE accepted_rules_count IS NOT NULL")
+    c.execute("SELECT AVG(permit_rules_count + deny_rules_count) as avg_total_rules FROM jobs_tracking WHERE permit_rules_count IS NOT NULL")
     rule_stats = c.fetchone()
     stats['avg_rules_per_job'] = rule_stats['avg_total_rules']
     

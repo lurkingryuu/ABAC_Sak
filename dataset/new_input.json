@@ -89,6 +89,6 @@
             "distribution": "N"
         }
     ],
-    "accepted_rules_count": 0,
-    "denied_rules_count": 4
+    "permit_rules_count": 0,
+    "deny_rules_count": 4
 }

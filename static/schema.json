@@ -15,11 +15,11 @@
             "type": "integer",
             "minimum": 1
         },
-        "accepted_rules_count": {
+        "permit_rules_count": {
             "type": "integer",
             "minimum": 0
         },
-        "denied_rules_count": {
+        "deny_rules_count": {
             "type": "integer",
             "minimum": 0
         },
@@ -70,8 +70,8 @@
         "subject_size",
         "object_size",
         "environment_size",
-        "accepted_rules_count",
-        "denied_rules_count"
+        "permit_rules_count",
+        "deny_rules_count"
     ],
     "definitions": {
         "distribution_array": {

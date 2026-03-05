@@ -795,8 +795,8 @@ def upload_json():
         required_fields = [
             'subject_size', 'object_size', 'environment_size',
             'subject_attributes_count', 'object_attributes_count',
-            'environment_attributes_count', 'accepted_rules_count',
-            'denied_rules_count'
+            'environment_attributes_count', 'permit_rules_count',
+            'deny_rules_count'
         ]
         missing_fields = [
             field for field in required_fields if field not in data

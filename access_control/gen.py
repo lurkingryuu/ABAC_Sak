@@ -306,15 +306,15 @@ output_data["EV"] = EV
 #############################
 
 # Generate accepted and denied rules
-accepted_rules_count = int(config["RULES"]["accepted_rules_count"])
-denied_rules_count = int(config["RULES"]["denied_rules_count"])
+permit_rules_count = int(config["RULES"]["permit_rules_count"])
+deny_rules_count = int(config["RULES"]["deny_rules_count"])
 
-accepted_rules = gen_rules.generate_rules_2(accepted_rules_count, n4, n5, n6, SV, OV, EV) if accepted_rules_count > 0 else []
-denied_rules = gen_rules.generate_rules_2(denied_rules_count, n4, n5, n6, SV, OV, EV) if denied_rules_count > 0 else []
+permit_rules = gen_rules.generate_rules_2(permit_rules_count, n4, n5, n6, SV, OV, EV) if permit_rules_count > 0 else []
+deny_rules = gen_rules.generate_rules_2(deny_rules_count, n4, n5, n6, SV, OV, EV) if deny_rules_count > 0 else []
 
 # Integrate generated rules into output.json as well
-output_data["accepted_rules"] = accepted_rules
-output_data["denied_rules"] = denied_rules
+output_data["permit_rules"] = permit_rules
+output_data["deny_rules"] = deny_rules
 
 with open(os.path.join(OUTPUT_FOLDER, 'output.json'), 'w') as f:
     json.dump(output_data, f, indent=4)
@@ -343,11 +343,11 @@ if not ENABLE_MEANINGFUL_NAMES:
                 return False
         return True
 
-    def fill_matrix_with_rules(A, SV, OV, EV, accepted_rules, denied_rules, n1, n2, n3):
+    def fill_matrix_with_rules(A, SV, OV, EV, permit_rules, deny_rules, n1, n2, n3):
         global no_of_ones
 
-        has_accepted = len(accepted_rules) > 0
-        has_denied = len(denied_rules) > 0
+        has_accepted = len(permit_rules) > 0
+        has_denied = len(deny_rules) > 0
 
         for i in range(n1):
             for j in range(n2):
@@ -356,8 +356,8 @@ if not ENABLE_MEANINGFUL_NAMES:
                     OA1 = OV[f"O_{j + 1}"]
                     EA1 = EV[f"E_{k + 1}"]
 
-                    matches_accepted = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in accepted_rules) if has_accepted else False
-                    matches_denied = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in denied_rules) if has_denied else False
+                    matches_accepted = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in permit_rules) if has_accepted else False
+                    matches_denied = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in deny_rules) if has_denied else False
 
                     if not has_accepted and not has_denied:
                         A[i][j][k] = 0
@@ -370,7 +370,7 @@ if not ENABLE_MEANINGFUL_NAMES:
 
                     no_of_ones += A[i][j][k]
 
-    fill_matrix_with_rules(A, SV, OV, EV, accepted_rules, denied_rules, n1, n2, n3)
+    fill_matrix_with_rules(A, SV, OV, EV, permit_rules, deny_rules, n1, n2, n3)
     print("No. of ones in ACM : ", no_of_ones)
 
     with open(os.path.join(OUTPUT_FOLDER, "ACM.txt"), "w") as file:
@@ -537,8 +537,8 @@ def convert_rules_to_healthcare(rules, subject_attrs, object_attrs, environment_
     return healthcare_rules
 
 # Convert accepted and denied rules to healthcare format
-accepted_healthcare_rules = convert_rules_to_healthcare(
-    accepted_rules,
+permit_healthcare_rules = convert_rules_to_healthcare(
+    permit_rules,
     healthcare_output_format["SA_HC"],
     healthcare_output_format["OA_HC"],
     healthcare_output_format["EA_HC"],
@@ -547,8 +547,8 @@ accepted_healthcare_rules = convert_rules_to_healthcare(
     healthcare_output_format["EAV_HC"]
 )
 
-denied_healthcare_rules = convert_rules_to_healthcare(
-    denied_rules,
+deny_healthcare_rules = convert_rules_to_healthcare(
+    deny_rules,
     healthcare_output_format["SA_HC"],
     healthcare_output_format["OA_HC"],
     healthcare_output_format["EA_HC"],
@@ -557,12 +557,12 @@ denied_healthcare_rules = convert_rules_to_healthcare(
     healthcare_output_format["EAV_HC"]
 )
 
-print(f"✓ Accepted rules converted to healthcare format ({len(accepted_healthcare_rules)} rules)")
-print(f"✓ Denied rules converted to healthcare format ({len(denied_healthcare_rules)} rules)")
+print(f"✓ Accepted rules converted to healthcare format ({len(permit_healthcare_rules)} rules)")
+print(f"✓ Denied rules converted to healthcare format ({len(deny_healthcare_rules)} rules)")
 print(f"  Example healthcare rules:")
-for rule in accepted_healthcare_rules[:1]:
+for rule in permit_healthcare_rules[:1]:
     print(f"    {rule[:100]}...")
-for rule in denied_healthcare_rules[:1]:
+for rule in deny_healthcare_rules[:1]:
     print(f"    {rule[:100]}...")
 
 # ==================== CONVERT ACCESS_DATA TO HEALTHCARE FORMAT ====================
@@ -586,18 +586,18 @@ def satisfies_rule(rule, SA1, OA1, EA1):
             return False
     return True
 
-def fill_matrix_with_rules(A, SV, OV, EV, accepted_rules, denied_rules, n1, n2, n3):
+def fill_matrix_with_rules(A, SV, OV, EV, permit_rules, deny_rules, n1, n2, n3):
     """
     Fill ACM with precedence logic:
-    - If both accepted_rules = 0 and denied_rules = 0: everything is denied (acm = 0)
-    - If accepted_rules > 0 and denied_rules = 0: current behavior (acm = 1 if matches accepted, else 0)
-    - If accepted_rules = 0 and denied_rules > 0: acm = 0 if matches denied, else 1
+    - If both permit_rules = 0 and deny_rules = 0: everything is denied (acm = 0)
+    - If permit_rules > 0 and deny_rules = 0: current behavior (acm = 1 if matches accepted, else 0)
+    - If permit_rules = 0 and deny_rules > 0: acm = 0 if matches denied, else 1
     - If both > 0: accepted rules take precedence (if matches both, acm = 1; if matches neither, acm = 0)
     """
     global no_of_ones
     
-    has_accepted = len(accepted_rules) > 0
-    has_denied = len(denied_rules) > 0
+    has_accepted = len(permit_rules) > 0
+    has_denied = len(deny_rules) > 0
     
     for i in range(n1):
         for j in range(n2):
@@ -606,8 +606,8 @@ def fill_matrix_with_rules(A, SV, OV, EV, accepted_rules, denied_rules, n1, n2, 
                 OA1 = OV[f"O_{j + 1}"]
                 EA1 = EV[f"E_{k + 1}"]
                 
-                matches_accepted = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in accepted_rules) if has_accepted else False
-                matches_denied = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in denied_rules) if has_denied else False
+                matches_accepted = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in permit_rules) if has_accepted else False
+                matches_denied = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in deny_rules) if has_denied else False
                 
                 # Apply precedence logic
                 if not has_accepted and not has_denied:
@@ -626,7 +626,7 @@ def fill_matrix_with_rules(A, SV, OV, EV, accepted_rules, denied_rules, n1, n2, 
                 
                 no_of_ones += A[i][j][k]
 
-fill_matrix_with_rules(A, SV, OV, EV, accepted_rules, denied_rules, n1, n2, n3)
+fill_matrix_with_rules(A, SV, OV, EV, permit_rules, deny_rules, n1, n2, n3)
 print("No. of ones in ACM : ", no_of_ones)
 
 # Write ACM to ACM.txt
@@ -734,8 +734,8 @@ output_data_hc["OV_HC"] = healthcare_output_format["OV_HC"]
 output_data_hc["EV_HC"] = healthcare_output_format["EV_HC"]
 
 # Append healthcare rules (both accepted and denied)
-output_data_hc["accepted_rules_HC"] = accepted_healthcare_rules
-output_data_hc["denied_rules_HC"] = denied_healthcare_rules
+output_data_hc["permit_rules_HC"] = permit_healthcare_rules
+output_data_hc["deny_rules_HC"] = deny_healthcare_rules
 
 print(f"✓ Healthcare data prepared successfully")
 print(f"  Example SV_HC mapping (actual names with attribute values):")
@@ -896,7 +896,7 @@ def convert_rules_to_university(rules, subject_attrs, object_attrs, environment_
     return university_rules
 
 university_rules = convert_rules_to_university(
-    accepted_rules,
+    permit_rules,
     university_output_format["SA_UNI"],
     university_output_format["OA_UNI"],
     university_output_format["EA_UNI"],
@@ -905,8 +905,8 @@ university_rules = convert_rules_to_university(
     university_output_format["EAV_UNI"]
 )
 
-denied_university_rules = convert_rules_to_university(
-    denied_rules,
+deny_university_rules = convert_rules_to_university(
+    deny_rules,
     university_output_format["SA_UNI"],
     university_output_format["OA_UNI"],
     university_output_format["EA_UNI"],
@@ -916,11 +916,11 @@ denied_university_rules = convert_rules_to_university(
 )
 
 print(f"✓ Accepted rules converted to university format ({len(university_rules)} rules)")
-print(f"✓ Denied rules converted to university format ({len(denied_university_rules)} rules)")
+print(f"✓ Denied rules converted to university format ({len(deny_university_rules)} rules)")
 print(f"  Example university rules:")
 for rule in university_rules[:1]:
     print(f"    {rule[:100]}...")
-for rule in denied_university_rules[:1]:
+for rule in deny_university_rules[:1]:
     print(f"    {rule[:100]}...")
 
 # Convert access_data to university format
@@ -988,8 +988,8 @@ output_data_uni["OV_UNI"] = university_output_format["OV_UNI"]
 output_data_uni["EV_UNI"] = university_output_format["EV_UNI"]
 
 # Append university rules (both accepted and denied)
-output_data_uni["accepted_rules_UNI"] = university_rules
-output_data_uni["denied_rules_UNI"] = denied_university_rules
+output_data_uni["permit_rules_UNI"] = university_rules
+output_data_uni["deny_rules_UNI"] = deny_university_rules
 
 print(f"✓ University data prepared successfully")
 print(f"  Example SV_UNI mapping (actual names with attribute values):")

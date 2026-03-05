@@ -6,7 +6,7 @@ import os
 ENV_INPUT_JSON = "ABAC_INPUT_JSON"
 ENV_CONFIG_INI = "ABAC_CONFIG_INI"
 
-def write_config_file(n1, n2, n3, n4, n5, n6, subject_attributes, object_attributes, environment_attributes, accepted_rules, denied_rules):
+def write_config_file(n1, n2, n3, n4, n5, n6, subject_attributes, object_attributes, environment_attributes, permit_rules, deny_rules):
     """
     Write the configuration to config.ini.
     """
@@ -45,8 +45,8 @@ def write_config_file(n1, n2, n3, n4, n5, n6, subject_attributes, object_attribu
     
     # Write rules count
     config['RULES'] = {
-        'accepted_rules_count': str(accepted_rules),
-        'denied_rules_count': str(denied_rules)
+        'permit_rules_count': str(permit_rules),
+        'deny_rules_count': str(deny_rules)
     }
     
     # Write config.ini: default is access_control/config.ini, but can be overridden per-job.
@@ -91,8 +91,8 @@ if __name__ == "__main__":
         "values": input_data["environment_attributes_values"],
         "distributions": input_data["environment_distributions"]
     }
-    accepted_rules = input_data.get("accepted_rules_count", 0)
-    denied_rules = input_data.get("denied_rules_count", 0)
+    permit_rules = input_data.get("permit_rules_count", 0)
+    deny_rules = input_data.get("deny_rules_count", 0)
 
     # Write to config.ini
-    write_config_file(n1, n2, n3, n4, n5, n6, subject_attributes, object_attributes, environment_attributes, accepted_rules, denied_rules)
+    write_config_file(n1, n2, n3, n4, n5, n6, subject_attributes, object_attributes, environment_attributes, permit_rules, deny_rules)
