@@ -61,7 +61,72 @@ Verify:
 uv --version
 ```
 
-### 1.4 Install Docker (for Nginx Proxy Manager only)
+### 1.4 Add swap space (recommended on small/medium EC2 instances)
+
+Many EC2 Ubuntu instances come without useful swap by default. Adding swap helps reduce OOM crashes during dependency installs, builds, or temporary traffic spikes.
+
+Check current memory/swap first:
+
+```bash
+free -h
+sudo swapon --show
+```
+
+Choose a swap size (practical starting point):
+
+| RAM | Suggested Swap |
+|-----|----------------|
+| < 2 GB | 2x RAM |
+| 2-8 GB | 1x RAM |
+| 8-64 GB | 4-8 GB |
+| > 64 GB | 4 GB (or workload-specific) |
+
+Example below creates a 4 GB swap file:
+
+```bash
+# 1) Create swapfile (fast path)
+sudo fallocate -l 4G /swapfile
+
+# If fallocate is unsupported on your filesystem, use dd instead:
+# sudo dd if=/dev/zero of=/swapfile bs=1M count=4096 status=progress
+
+# 2) Lock down permissions
+sudo chmod 600 /swapfile
+
+# 3) Format + enable swap
+sudo mkswap /swapfile
+sudo swapon /swapfile
+
+# 4) Verify
+sudo swapon --show
+free -h
+```
+
+Make swap persistent across reboot:
+
+```bash
+sudo cp /etc/fstab /etc/fstab.bak
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+grep swapfile /etc/fstab
+```
+
+Optional tuning (good server defaults):
+
+```bash
+cat << 'EOF' | sudo tee /etc/sysctl.d/99-swap.conf
+vm.swappiness=10
+vm.vfs_cache_pressure=50
+EOF
+
+sudo sysctl --system
+```
+
+Notes:
+- If `swapon /swapfile` returns "Invalid argument", recreate the file with `dd` (non-sparse) instead of `fallocate`.
+- Swap is a safety net, not a RAM replacement. If swap is constantly high, increase instance memory.
+- On EC2, swap on root EBS is common and persistent. If you place swap on instance-store volumes, it is lost when the instance stops/terminates.
+
+### 1.5 Install Docker (for Nginx Proxy Manager only)
 
 ```bash
 # Add Docker's official GPG key
@@ -95,14 +160,14 @@ Verify:
 docker --version
 ```
 
-### 1.5 Create directory structure
+### 1.6 Create directory structure
 
 ```bash
 mkdir -p ~/apps
 mkdir -p ~/nginx-proxy-manager
 ```
 
-### 1.6 Start Nginx Proxy Manager
+### 1.7 Start Nginx Proxy Manager
 
 ```bash
 cat > ~/nginx-proxy-manager/docker-compose.yml << 'EOF'
@@ -131,7 +196,7 @@ Open `http://YOUR_SERVER_IP:81` in your browser:
 - Password: `changeme`
 - **Change these immediately on first login.**
 
-### 1.7 AWS Security Group
+### 1.8 AWS Security Group
 
 Make sure your EC2 security group allows inbound:
 
