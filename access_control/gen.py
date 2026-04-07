@@ -50,10 +50,12 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 # Parse attributes from config.ini
 def parse_attributes(section):
+    correlations_raw = config[section].get("correlations", "{}")
     return {
         "count": int(config[section]["count"]),
         "values": list(map(int, config[section]["values"].split(','))),
-        "distributions": json.loads(config[section]["distributions"])
+        "distributions": json.loads(config[section]["distributions"]),
+        "correlations": json.loads(correlations_raw) if correlations_raw else {},
     }
 
 subject_attributes = parse_attributes("SUBJECT_ATTRIBUTES")
@@ -138,79 +140,225 @@ def sample_truncated_normal(mean, variance, low, high):
     a, b = (low - mean) / sigma, (high - mean) / sigma
     return truncnorm.rvs(a, b, loc=mean, scale=sigma)
 
-# ---- main assignment routine ----
-def assign_values(attribute_values, distributions, entity_count,
-                  attribute_prefix, entity_prefix):
-    """
-    attribute_values: dict like {"SA_1": ["SA_1_1","SA_1_2",...], ...}
-    distributions: list of dicts, one per attribute, e.g. [{"distribution":"N"}, {"distribution":"P"}, ...]
-                   For Normal you may optionally include "mean" and "variance", but defaults are used if missing.
-                   For Poisson we IGNORE any provided lambda and compute lambda=(1+n)/2 as requested.
-    """
+def _normalize_prob_vector(probs):
+    probs = np.asarray(probs, dtype=float)
+    probs[probs < 0] = 0
+    total = probs.sum()
+    if total <= 0:
+        return np.ones_like(probs, dtype=float) / len(probs)
+    return probs / total
+
+
+def _normal_bin_probabilities(n, dist):
+    mean = float(dist.get("mean", (n + 1) / 2.0))
+    variance = float(dist.get("variance", (n / 6.0) ** 2))
+    sigma = max(np.sqrt(variance), 1e-9)
+    a = (0.0 - mean) / sigma
+    b = (float(n) - mean) / sigma
+    if hasattr(truncnorm, "cdf"):
+        cdf_edges = np.array([
+            truncnorm.cdf(float(i), a, b, loc=mean, scale=sigma) for i in range(n + 1)
+        ])
+        probs = np.diff(cdf_edges)
+        return _normalize_prob_vector(probs)
+    # Fallback for environments without scipy.stats truncnorm.cdf.
+    draws = np.array([sample_truncated_normal(mean, variance, 0.0, float(n)) for _ in range(2000)])
+    bins = np.clip(draws.astype(int), 0, n - 1)
+    counts = np.bincount(bins, minlength=n)
+    return _normalize_prob_vector(counts)
+
+
+def _build_base_sampler(distributions, attribute_values, attribute_prefix):
+    samplers = []
+    marginals = []
+    for i, dist in enumerate(distributions):
+        n = len(attribute_values[f"{attribute_prefix}_{i+1}"])
+        dtype = dist["distribution"]
+        if dtype == "N":
+            probs = _normal_bin_probabilities(n, dist)
+        elif dtype == "P":
+            lam = float(dist["lambda"])
+            probs = _normalize_prob_vector([poisson_pmf(lam, k=j + 1) for j in range(n)])
+        elif dtype == "U":
+            low_idx = max(0, int(dist.get("low", 0)))
+            high_idx = min(n, int(dist.get("high", n)))
+            if high_idx <= low_idx:
+                low_idx, high_idx = 0, n
+            probs = np.zeros(n, dtype=float)
+            probs[low_idx:high_idx] = 1.0
+            probs = _normalize_prob_vector(probs)
+        else:
+            raise ValueError(f"Unsupported distribution type: {dtype}")
+        marginals.append(probs)
+        samplers.append(np.arange(n))
+    return samplers, marginals
+
+
+def _sample_from_probs(probs):
+    return np.random.choice(np.arange(len(probs)), p=probs)
+
+
+def _sample_rows_from_prob_matrix(prob_matrix):
+    cdf = np.cumsum(prob_matrix, axis=1)
+    r = np.random.rand(prob_matrix.shape[0], 1)
+    return (cdf < r).sum(axis=1)
+
+
+def _normalize_joint_target(pair, cardinality_a, cardinality_b, marginal_a, marginal_b):
+    target = pair.get("target", {})
+    if "joint_table" in target:
+        table = np.array(target["joint_table"], dtype=float)
+        if table.shape != (cardinality_a, cardinality_b):
+            raise ValueError("Correlation joint_table dimensions do not match attribute domains")
+        return _normalize_prob_vector(table.reshape(-1)).reshape(cardinality_a, cardinality_b)
+    if "cramers_v" in target:
+        strength = float(target.get("cramers_v", 0.0))
+        base = np.outer(marginal_a, marginal_b)
+        diagonal = np.zeros_like(base)
+        diag_len = min(cardinality_a, cardinality_b)
+        for d in range(diag_len):
+            diagonal[d, d] = 1.0 / diag_len
+        table = (1.0 - strength) * base + strength * diagonal
+        return _normalize_prob_vector(table.reshape(-1)).reshape(cardinality_a, cardinality_b)
+    raise ValueError("Each correlation pair target must define joint_table or cramers_v")
+
+
+def _js_divergence(p, q):
+    p = _normalize_prob_vector(p)
+    q = _normalize_prob_vector(q)
+    m = 0.5 * (p + q)
+    def _kl(a, b):
+        eps = 1e-12
+        mask = a > 0
+        return np.sum(a[mask] * np.log((a[mask] + eps) / (b[mask] + eps)))
+    return 0.5 * _kl(p, m) + 0.5 * _kl(q, m)
+
+
+def _compute_pair_l1(samples, idx_a, idx_b, card_a, card_b, target_joint):
+    observed = np.zeros((card_a, card_b), dtype=float)
+    np.add.at(observed, (samples[:, idx_a], samples[:, idx_b]), 1.0)
+    observed /= max(len(samples), 1)
+    return float(np.abs(observed - target_joint).sum())
+
+
+def _compute_metrics(samples, base_marginals, pair_specs):
+    marginal_error = 0.0
+    for idx, base_prob in enumerate(base_marginals):
+        observed = np.bincount(samples[:, idx], minlength=len(base_prob))
+        observed = observed / max(len(samples), 1)
+        marginal_error += _js_divergence(observed, base_prob)
+    pair_error = 0.0
+    for spec in pair_specs:
+        pair_error += _compute_pair_l1(
+            samples,
+            spec["idx_a"],
+            spec["idx_b"],
+            spec["card_a"],
+            spec["card_b"],
+            spec["target_joint"],
+        )
+    if pair_specs:
+        pair_error /= len(pair_specs)
+    if base_marginals:
+        marginal_error /= len(base_marginals)
+    return marginal_error, pair_error
+
+
+def assign_values(attribute_values, distributions, entity_count, attribute_prefix, entity_prefix, correlations=None, sampling_config=None):
+    correlations = correlations or {}
+    sampling_config = sampling_config or {}
+    _, base_marginals = _build_base_sampler(distributions, attribute_values, attribute_prefix)
+    attr_count = len(base_marginals)
+    samples = np.zeros((entity_count, attr_count), dtype=int)
+
+    # Independent initialization (vectorized).
+    for idx, probs in enumerate(base_marginals):
+        samples[:, idx] = np.random.choice(np.arange(len(probs)), size=entity_count, p=probs)
+
+    # Pairwise soft calibration (hybrid phase-1 implementation).
+    pair_specs = []
+    for pair in correlations.get("pairs", []):
+        idx_a = int(pair["attr_a"]) - 1
+        idx_b = int(pair["attr_b"]) - 1
+        if idx_a < 0 or idx_b < 0 or idx_a >= attr_count or idx_b >= attr_count or idx_a == idx_b:
+            continue
+        card_a = len(base_marginals[idx_a])
+        card_b = len(base_marginals[idx_b])
+        target_joint = _normalize_joint_target(
+            pair,
+            card_a,
+            card_b,
+            base_marginals[idx_a],
+            base_marginals[idx_b],
+        )
+        pair_specs.append({
+            "idx_a": idx_a,
+            "idx_b": idx_b,
+            "card_a": card_a,
+            "card_b": card_b,
+            "target_joint": target_joint,
+            "weight": float(pair.get("weight", 1.0)),
+        })
+
+    alpha = float(sampling_config.get("alpha", 0.8))
+    beta = float(sampling_config.get("beta", 0.2))
+    max_iters = int(sampling_config.get("max_calibration_iters", 25))
+    marginal_tolerance = float(sampling_config.get("marginal_tolerance", 0.02))
+    pair_tolerance = float(sampling_config.get("pair_tolerance", 0.15))
+
+    diagnostics = {
+        "mode": "independent",
+        "iterations": 0,
+        "marginal_error": 0.0,
+        "pair_error": 0.0,
+        "marginal_tolerance": marginal_tolerance,
+        "pair_tolerance": pair_tolerance,
+    }
+    if pair_specs and entity_count > 0:
+        diagnostics["mode"] = "pairwise_soft_calibrated"
+        marginal_mix = alpha / max(alpha + beta, 1e-9)
+        correlation_mix = 1.0 - marginal_mix
+        for iteration in range(max_iters):
+            for spec in pair_specs:
+                idx_a = spec["idx_a"]
+                idx_b = spec["idx_b"]
+                target_joint = spec["target_joint"]
+                cond_b_given_a = np.zeros_like(target_joint)
+                row_sums = target_joint.sum(axis=1, keepdims=True)
+                np.divide(target_joint, row_sums, out=cond_b_given_a, where=row_sums > 0)
+                per_row = cond_b_given_a[samples[:, idx_a]]
+                blended = correlation_mix * per_row + marginal_mix * base_marginals[idx_b][None, :]
+                blended = np.apply_along_axis(_normalize_prob_vector, 1, blended)
+                samples[:, idx_b] = _sample_rows_from_prob_matrix(blended)
+
+                # Symmetric update for A given B to avoid directional bias.
+                cond_a_given_b = np.zeros_like(target_joint.T)
+                col_sums = target_joint.sum(axis=0, keepdims=True)
+                np.divide(target_joint.T, col_sums, out=cond_a_given_b, where=col_sums > 0)
+                per_row_a = cond_a_given_b[samples[:, idx_b]]
+                blended_a = correlation_mix * per_row_a + marginal_mix * base_marginals[idx_a][None, :]
+                blended_a = np.apply_along_axis(_normalize_prob_vector, 1, blended_a)
+                samples[:, idx_a] = _sample_rows_from_prob_matrix(blended_a)
+            diagnostics["iterations"] = iteration + 1
+            m_err, p_err = _compute_metrics(samples, base_marginals, pair_specs)
+            diagnostics["marginal_error"] = round(float(m_err), 6)
+            diagnostics["pair_error"] = round(float(p_err), 6)
+            if m_err <= marginal_tolerance and p_err <= pair_tolerance:
+                break
+    else:
+        m_err, p_err = _compute_metrics(samples, base_marginals, [])
+        diagnostics["marginal_error"] = round(float(m_err), 6)
+        diagnostics["pair_error"] = round(float(p_err), 6)
+
     entity_values = {}
-
-    for entity in range(1, entity_count + 1):
-        key = f"{entity_prefix}_{entity}"
-        entity_values[key] = []
-
-        for i, dist in enumerate(distributions):
+    for entity in range(entity_count):
+        key = f"{entity_prefix}_{entity + 1}"
+        row = []
+        for i in range(attr_count):
             values = attribute_values[f"{attribute_prefix}_{i+1}"]
-            n = len(values)
-
-            if dist["distribution"] == "N":
-                # use defaults unless user provided overrides
-                mean = dist.get("mean", (n+1)/2.0)
-                # mean=0.5
-                # variance = dist.get("variance", 0.01)
-                variance = dist.get("variance", (n/6.0)**2)
-
-                # variance=0.01
-                # sigma = np.sqrt(variance)
-                x = sample_truncated_normal(mean=mean, variance=variance, low=0.0, high=float(n))
-
-                # map continuous x in [0,1] to one of n equal bins [0,1/n),[1/n,2/n),...
-                # map x ∈ [0,n] to bin k: choose a_k if x ∈ [k-1, k)
-                # 0-based index: idx = floor(x), then clamp to [0, n-1]
-                idx = int(x)
-                if idx >= n:    # rare edge if x == 1.0
-                    idx = n - 1
-                entity_values[key].append(values[idx])
-
-            elif dist["distribution"] == "P":
-                # λ set to middle of 1..n 
-                lam = dist["lambda"]
-
-                # compute (truncated) weights for k = 1..n (attribute j corresponds to k=j+1)
-                probs = np.array([poisson_pmf(lam, k=j+1) for j in range(n)], dtype=float)
-
-                # normalize so they sum to 1 (this is the "scale up the prob sum to 1" step)
-                probs /= probs.sum()
-
-                # sample index according to these weights
-                idx = np.random.choice(np.arange(n), p=probs)
-                entity_values[key].append(values[idx])
-
-            elif dist["distribution"] == "U":
-                # Uniform distribution
-                low_idx = dist.get("low", 0)
-                high_idx = dist.get("high", n)
-                
-                # Ensure integer bounds and clamp
-                low_idx = max(0, int(low_idx))
-                high_idx = min(n, int(high_idx))
-                
-                if high_idx <= low_idx:
-                    # Fallback to full range if invalid
-                    low_idx = 0
-                    high_idx = n
-                
-                idx = np.random.choice(np.arange(low_idx, high_idx))
-                entity_values[key].append(values[idx])
-
-            else:
-                raise ValueError(f"Unsupported distribution type: {dist['distribution']}")
-
-    return entity_values
+            row.append(values[int(samples[entity, i])])
+        entity_values[key] = row
+    return entity_values, diagnostics
 
 
 # # Assign values to subjects, objects, and environments
@@ -258,10 +406,30 @@ n3 = int(config["NUMBERS"]["n3"])
 n4 = int(config["NUMBERS"]["n4"])
 n5 = int(config["NUMBERS"]["n5"])
 n6 = int(config["NUMBERS"]["n6"])
+seed_raw = config["NUMBERS"].get("seed", "").strip()
+if seed_raw:
+    seed = int(seed_raw)
+    random.seed(seed)
+    np.random.seed(seed)
+else:
+    seed = None
+sampling_config = json.loads(config.get("SAMPLING", "config", fallback="{}"))
 
-SV = assign_values(SAV, subject_attributes["distributions"], n1, "SA", "S")
-OV = assign_values(OAV, object_attributes["distributions"], n2, "OA", "O")
-EV = assign_values(EAV, environment_attributes["distributions"], n3, "EA", "E")
+SV, subject_diag = assign_values(
+    SAV, subject_attributes["distributions"], n1, "SA", "S",
+    correlations=subject_attributes.get("correlations", {}),
+    sampling_config=sampling_config,
+)
+OV, object_diag = assign_values(
+    OAV, object_attributes["distributions"], n2, "OA", "O",
+    correlations=object_attributes.get("correlations", {}),
+    sampling_config=sampling_config,
+)
+EV, environment_diag = assign_values(
+    EAV, environment_attributes["distributions"], n3, "EA", "E",
+    correlations=environment_attributes.get("correlations", {}),
+    sampling_config=sampling_config,
+)
 
 # Generate users, objects, and environments
 S = [f"S_{i}" for i in range(1, n1 + 1)]
@@ -301,6 +469,13 @@ output_data["EAV"] = EAV
 output_data["SV"] = SV
 output_data["OV"] = OV
 output_data["EV"] = EV
+output_data["generation_diagnostics"] = {
+    "seed": seed,
+    "sampling_config": sampling_config,
+    "subject": subject_diag,
+    "object": object_diag,
+    "environment": environment_diag,
+}
 
 
 #############################

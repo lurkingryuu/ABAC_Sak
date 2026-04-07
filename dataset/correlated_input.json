@@ -1,0 +1,53 @@
+{
+    "$schema": "https://abacsim.pythonanywhere.com/schema.json",
+    "subject_size": 12,
+    "object_size": 8,
+    "environment_size": 4,
+    "subject_attributes_count": 3,
+    "object_attributes_count": 2,
+    "environment_attributes_count": 2,
+    "subject_attributes_values": [3, 3, 2],
+    "object_attributes_values": [3, 2],
+    "environment_attributes_values": [2, 2],
+    "subject_distributions": [
+        { "distribution": "U" },
+        { "distribution": "U" },
+        { "distribution": "P", "lambda": 1.7 }
+    ],
+    "object_distributions": [
+        { "distribution": "N", "mean": 2.0, "variance": 0.6 },
+        { "distribution": "U" }
+    ],
+    "environment_distributions": [
+        { "distribution": "U" },
+        { "distribution": "U" }
+    ],
+    "correlations": {
+        "subject": {
+            "pairs": [
+                {
+                    "attr_a": 1,
+                    "attr_b": 2,
+                    "weight": 1.0,
+                    "target": {
+                        "joint_table": [
+                            [0.20, 0.02, 0.02],
+                            [0.02, 0.20, 0.02],
+                            [0.02, 0.02, 0.28]
+                        ]
+                    }
+                }
+            ]
+        }
+    },
+    "sampling_config": {
+        "alpha": 0.85,
+        "beta": 0.15,
+        "max_calibration_iters": 18,
+        "marginal_tolerance": 0.05,
+        "pair_tolerance": 0.30
+    },
+    "seed": 42,
+    "permit_rules_count": 2,
+    "deny_rules_count": 1
+}

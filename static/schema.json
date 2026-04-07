@@ -64,6 +64,15 @@
         },
         "environment_distributions": {
             "$ref": "#/definitions/distribution_array"
+        },
+        "seed": {
+            "type": "integer"
+        },
+        "sampling_config": {
+            "$ref": "#/definitions/sampling_config"
+        },
+        "correlations": {
+            "$ref": "#/definitions/correlations"
         }
     },
     "required": [
@@ -103,6 +112,113 @@
                     "distribution"
                 ]
             }
+        },
+        "sampling_config": {
+            "type": "object",
+            "properties": {
+                "alpha": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "beta": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "max_calibration_iters": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "marginal_tolerance": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "pair_tolerance": {
+                    "type": "number",
+                    "minimum": 0
+                }
+            }
+        },
+        "correlations": {
+            "type": "object",
+            "properties": {
+                "subject": {
+                    "$ref": "#/definitions/entity_correlation"
+                },
+                "object": {
+                    "$ref": "#/definitions/entity_correlation"
+                },
+                "environment": {
+                    "$ref": "#/definitions/entity_correlation"
+                }
+            }
+        },
+        "entity_correlation": {
+            "type": "object",
+            "properties": {
+                "pairs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/pair_correlation"
+                    }
+                }
+            }
+        },
+        "pair_correlation": {
+            "type": "object",
+            "properties": {
+                "attr_a": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "attr_b": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "weight": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                },
+                "target": {
+                    "type": "object",
+                    "oneOf": [
+                        {
+                            "required": [
+                                "joint_table"
+                            ],
+                            "properties": {
+                                "joint_table": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "number",
+                                            "minimum": 0
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            "required": [
+                                "cramers_v"
+                            ],
+                            "properties": {
+                                "cramers_v": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            "required": [
+                "attr_a",
+                "attr_b",
+                "target"
+            ]
         }
     }
 }
