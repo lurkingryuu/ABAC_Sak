@@ -1,26 +1,94 @@
+
 import configparser
+import json
 import os
 
+ENV_INPUT_JSON = "ABAC_INPUT_JSON"
 ENV_CONFIG_INI = "ABAC_CONFIG_INI"
 
-config = configparser.ConfigParser()
+def write_config_file(n1, n2, n3, n4, n5, n6, subject_attributes, object_attributes, environment_attributes, N):
+    """
+    Write the configuration to config.ini.
+    """
+    config = configparser.ConfigParser()
+    
+    # Write numbers
+    config['NUMBERS'] = {
+        'n1': str(n1),
+        'n2': str(n2),
+        'n3': str(n3),
+        'n4': str(n4),
+        'n5': str(n5),
+        'n6': str(n6)
+    }
+    
+    # Write subject attributes
+    config['SUBJECT_ATTRIBUTES'] = {
+        'count': str(n4),
+        'values': ','.join(map(str, subject_attributes["values"])),
+        'distributions': json.dumps(subject_attributes["distributions"])
+    }
+    
+    # Write object attributes
+    config['OBJECT_ATTRIBUTES'] = {
+        'count': str(n5),
+        'values': ','.join(map(str, object_attributes["values"])),
+        'distributions': json.dumps(object_attributes["distributions"])
+    }
+    
+    # Write environment attributes
+    config['ENVIRONMENT_ATTRIBUTES'] = {
+        'count': str(n6),
+        'values': ','.join(map(str, environment_attributes["values"])),
+        'distributions': json.dumps(environment_attributes["distributions"])
+    }
+    
+    # Write rules count
+    config['RULES'] = {'rules_count': str(N)}
+    
+    # Write config.ini: default is access_control/config.ini, but can be overridden per-job.
+    config_path = os.environ.get(ENV_CONFIG_INI) or os.path.join(
+        os.path.dirname(__file__), 'config.ini'
+    )
+    os.makedirs(os.path.dirname(os.path.abspath(config_path)), exist_ok=True)
+    with open(config_path, 'w') as configfile:
+        config.write(configfile)
 
-# Prefer an explicit config path (per-job) via env, otherwise fall back to access_control/config.ini.
-_default_config_path = os.path.join(os.path.dirname(__file__), "config.ini")
-_config_path = os.environ.get(ENV_CONFIG_INI) or _default_config_path
-config.read(_config_path)
+def read_input_json(file_path):
+    """
+    Read input.json and return the parsed data.
+    """
+    with open(file_path, "r") as file:
+        data = json.load(file)
+        return data
 
-n1 = int(config["NUMBERS"]["n1"])
-n2 = int(config["NUMBERS"]["n2"])
-n3 = int(config["NUMBERS"]["n3"])
-n4 = int(config["NUMBERS"]["n4"])
-n5 = int(config["NUMBERS"]["n5"])
-n6 = int(config["NUMBERS"]["n6"])
+if __name__ == "__main__":
+    # Read input.json: default is ../uploads/input.json, but can be overridden per-job.
+    input_path = os.environ.get(ENV_INPUT_JSON) or os.path.join(
+        os.path.dirname(__file__), '../uploads/input.json'
+    )
+    input_data = read_input_json(input_path)
+    
+    # Extract values from JSON
+    n1 = input_data["subject_size"]
+    n2 = input_data["object_size"]
+    n3 = input_data["environment_size"]
+    n4 = input_data["subject_attributes_count"]
+    n5 = input_data["object_attributes_count"]
+    n6 = input_data["environment_attributes_count"]
+    subject_attributes = {
+        "values": input_data["subject_attributes_values"],
+        "distributions": input_data["subject_distributions"]
+    }
+    object_attributes = {
+        "values": input_data["object_attributes_values"],
+        "distributions": input_data["object_distributions"]
+    }
+    environment_attributes = {
+        "values": input_data["environment_attributes_values"],
+        "distributions": input_data["environment_distributions"]
+    }
+    N = input_data["rules_count"]
 
-subject_attributes = list(map(int, config["SUBJECT_ATTRIBUTES"]["values"].split(",")))
-
-object_attributes = list(map(int, config["OBJECT_ATTRIBUTES"]["values"].split(",")))
-
-environment_attributes = list(map(int, config["ENVIRONMENT_ATTRIBUTES"]["values"].split(",")))
-
-n = int(config["RULES"]["n"])
+    # Write to config.ini
+    write_config_file(n1, n2, n3, n4, n5, n6, subject_attributes, object_attributes, environment_attributes, N)
