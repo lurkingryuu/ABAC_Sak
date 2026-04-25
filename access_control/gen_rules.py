@@ -61,17 +61,28 @@ def generate_rules_1(N, n4, n5, n6, SA_values, OA_values, EA_values):
 
 
 
-def generate_rules_2(N, n4, n5, n6, SV, OV, EV):
+def generate_rules_2(N, n4, n5, n6, SV, OV, EV, subject_stars=None, object_stars=None, environment_stars=None):
     """
     Generate N rules by picking one subject S_x, one object O_y and one env E_z per rule.
     Use the chosen instance's concrete attribute tokens for ALL SA_i / OA_i / EA_i.
-    Include '*' for any attribute with probability star_prob (10^-5).
-    If no instance has all required attributes, raise an error.
+    Include '*' for each attribute with the specified count (or 0 if not provided).
+    
+    Parameters:
+    - N: Number of rules to generate
+    - n4, n5, n6: Number of subject, object, and environment attributes
+    - SV, OV, EV: Subject, object, and environment attribute value dictionaries
+    - subject_stars: List of number of stars for each subject attribute (defaults to all 0)
+    - object_stars: List of number of stars for each object attribute (defaults to all 0)
+    - environment_stars: List of number of stars for each environment attribute (defaults to all 0)
     """
     import random
 
     rules = []
-    star_prob = 0.03
+
+    # Default to all zeros if not provided
+    subject_stars = subject_stars or [0] * n4
+    object_stars = object_stars or [0] * n5
+    environment_stars = environment_stars or [0] * n6
 
     subject_keys = list(SV.keys()) if SV else []
     object_keys = list(OV.keys()) if OV else []
@@ -107,25 +118,34 @@ def generate_rules_2(N, n4, n5, n6, SV, OV, EV):
         e, e_map = pick_instance_with_all('EA', env_keys, EV, n6)
 
         parts = []
-        # use exact tokens from chosen subject or '*' with star_prob
+        # use exact token from chosen subject or '*' based on star count
         for i in range(1, n4 + 1):
             key = f"SA_{i}"
             val = s_map[key]
-            chosen = '*' if random.random() < star_prob else val
+            num_stars = subject_stars[i - 1]
+            # Create choice list: 1 concrete value + num_stars wildcards
+            choices = [val] + ['*'] * num_stars
+            chosen = random.choice(choices)
             parts.append(f"{key} = {chosen}")
 
-        # use exact tokens from chosen object or '*' with star_prob
+        # use exact token from chosen object or '*' based on star count
         for i in range(1, n5 + 1):
             key = f"OA_{i}"
             val = o_map[key]
-            chosen = '*' if random.random() < star_prob else val
+            num_stars = object_stars[i - 1]
+            # Create choice list: 1 concrete value + num_stars wildcards
+            choices = [val] + ['*'] * num_stars
+            chosen = random.choice(choices)
             parts.append(f"{key} = {chosen}")
 
-        # use exact tokens from chosen environment or '*' with star_prob
+        # use exact token from chosen environment or '*' based on star count
         for i in range(1, n6 + 1):
             key = f"EA_{i}"
             val = e_map[key]
-            chosen = '*' if random.random() < star_prob else val
+            num_stars = environment_stars[i - 1]
+            # Create choice list: 1 concrete value + num_stars wildcards
+            choices = [val] + ['*'] * num_stars
+            chosen = random.choice(choices)
             parts.append(f"{key} = {chosen}")
 
         rules.append(", ".join(parts))
