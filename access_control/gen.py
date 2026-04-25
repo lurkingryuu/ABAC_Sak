@@ -48,9 +48,18 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
 # Parse attributes from config.ini
 def parse_attributes(section):
+    """
+    Parse attributes from config section.
+    Returns a dict with:
+    - count: number of attributes
+    - values: list of number of values for each attribute
+    - stars: list of number of stars for each attribute (optional, defaults to empty)
+    - distributions: list of distribution dicts
+    """
     return {
         "count": int(config[section]["count"]),
         "values": list(map(int, config[section]["values"].split(','))),
+        "stars": list(map(int, config[section].get("stars", "0," * int(config[section]["count"])).rstrip(',').split(','))),
         "distributions": json.loads(config[section]["distributions"])
     }
 
@@ -307,8 +316,19 @@ output_data["EV"] = EV
 accepted_rules_count = int(config["RULES"]["accepted_rules_count"])
 denied_rules_count = int(config["RULES"]["denied_rules_count"])
 
-accepted_rules = gen_rules.generate_rules_2(accepted_rules_count, n4, n5, n6, SV, OV, EV) if accepted_rules_count > 0 else []
-denied_rules = gen_rules.generate_rules_2(denied_rules_count, n4, n5, n6, SV, OV, EV) if denied_rules_count > 0 else []
+accepted_rules = gen_rules.generate_rules_2(
+    accepted_rules_count, n4, n5, n6, SV, OV, EV,
+    subject_stars=subject_attributes["stars"],
+    object_stars=object_attributes["stars"],
+    environment_stars=environment_attributes["stars"]
+) if accepted_rules_count > 0 else []
+
+denied_rules = gen_rules.generate_rules_2(
+    denied_rules_count, n4, n5, n6, SV, OV, EV,
+    subject_stars=subject_attributes["stars"],
+    object_stars=object_attributes["stars"],
+    environment_stars=environment_attributes["stars"]
+) if denied_rules_count > 0 else []
 
 # Integrate generated rules into output.json as well
 output_data["accepted_rules"] = accepted_rules
@@ -373,88 +393,103 @@ print("\n" + "="*60)
 print("CONVERTING RULES TO HEALTHCARE FORMAT")
 print("="*60)
 
-def convert_rules_to_healthcare(rules, subject_attrs, object_attrs, environment_attrs, 
-                                subject_av, object_av, environment_av):
+def convert_rules_to_domain_format(rules, subject_attrs, object_attrs, environment_attrs,
+                                   subject_av, object_av, environment_av):
     """
-    Convert indexed rules (SA_1 = SA_1_5) to healthcare format (employee_id = licensed).
+    Convert indexed rules (SA_1 = SA_1_5) to domain format (role = physician).
     
     Mapping:
-    - SA_1 → first subject attribute name
-    - SA_1_5 → 5th value of first subject attribute
-    - SA_1 = * → keep * but replace SA_1 with actual attribute name
+    - SA_1 = SA_1_5: Use subject_attrs[0] as key, subject_av[subject_attrs[0]][4] as value
+    - SA_1 = *: Keep wildcard, use subject_attrs[0] as key
+    - Maintains order of attributes in rule
+    
+    Args:
+        rules: List of rules with indexed notation (SA_1 = SA_1_5, ...)
+        subject_attrs: List of subject attribute names
+        object_attrs: List of object attribute names
+        environment_attrs: List of environment attribute names
+        subject_av: Dict[attr_name] -> List[values]
+        object_av: Dict[attr_name] -> List[values]
+        environment_av: Dict[attr_name] -> List[values]
+    
+    Returns:
+        List of converted rules with actual attribute names and values
     """
-    healthcare_rules = []
+    converted_rules = []
     
     for rule in rules:
         rule_parts = rule.split(", ")
-        healthcare_rule_parts = []
+        converted_parts = []
         
         for part in rule_parts:
-            if "=" in part:
-                key, value = part.split(" = ")
-                
-                # Parse the key (e.g., "SA_1" → attr_type="SA", attr_idx=1)
-                key_parts = key.split("_")
-                if len(key_parts) >= 2:
-                    attr_type = key_parts[0]  # "SA", "OA", "EA"
-                    try:
-                        attr_idx = int(key_parts[1]) - 1  # Convert to 0-based
-                    except:
-                        healthcare_rule_parts.append(part)
-                        continue
-                    
-                    # Get the actual attribute name
-                    if attr_type == "SA" and 0 <= attr_idx < len(subject_attrs):
-                        attr_name = subject_attrs[attr_idx]
-                    elif attr_type == "OA" and 0 <= attr_idx < len(object_attrs):
-                        attr_name = object_attrs[attr_idx]
-                    elif attr_type == "EA" and 0 <= attr_idx < len(environment_attrs):
-                        attr_name = environment_attrs[attr_idx]
-                    else:
-                        healthcare_rule_parts.append(part)
-                        continue
-                    
-                    # Handle value
-                    if value.strip() == "*":
-                        # Keep * as is
-                        healthcare_rule_parts.append(f"{attr_name} = *")
-                    else:
-                        # Parse value (e.g., "SA_1_5" → value_idx=5)
-                        value_parts = value.split("_")
-                        if len(value_parts) >= 3:
-                            try:
-                                value_idx = int(value_parts[-1]) - 1  # Convert to 0-based
-                                
-                                # Get the actual attribute value
-                                if attr_type == "SA" and 0 <= attr_idx < len(subject_attrs):
-                                    values = subject_av.get(attr_name, [])
-                                elif attr_type == "OA" and 0 <= attr_idx < len(object_attrs):
-                                    values = object_av.get(attr_name, [])
-                                elif attr_type == "EA" and 0 <= attr_idx < len(environment_attrs):
-                                    values = environment_av.get(attr_name, [])
-                                else:
-                                    values = []
-                                
-                                if 0 <= value_idx < len(values):
-                                    actual_value = values[value_idx]
-                                    healthcare_rule_parts.append(f"{attr_name} = {actual_value}")
-                                else:
-                                    healthcare_rule_parts.append(part)
-                            except:
-                                healthcare_rule_parts.append(part)
-                        else:
-                            healthcare_rule_parts.append(part)
-                else:
-                    healthcare_rule_parts.append(part)
+            if "=" not in part:
+                continue
+            
+            key, value = part.split(" = ", 1)
+            key = key.strip()
+            value = value.strip()
+            
+            # Parse the key (e.g., "SA_1" → attr_type="SA", attr_idx=1)
+            key_parts = key.split("_")
+            if len(key_parts) < 2:
+                continue
+            
+            attr_type = key_parts[0]  # "SA", "OA", "EA"
+            try:
+                attr_idx = int(key_parts[1]) - 1  # Convert to 0-based indexing
+            except (ValueError, IndexError):
+                continue
+            
+            # Determine attribute list and value mapping
+            if attr_type == "SA":
+                attrs = subject_attrs
+                av = subject_av
+            elif attr_type == "OA":
+                attrs = object_attrs
+                av = object_av
+            elif attr_type == "EA":
+                attrs = environment_attrs
+                av = environment_av
             else:
-                healthcare_rule_parts.append(part)
+                continue
+            
+            # Validate attribute index
+            if not (0 <= attr_idx < len(attrs)):
+                continue
+            
+            attr_name = attrs[attr_idx]
+            
+            # Handle wildcard
+            if value == "*":
+                converted_parts.append(f"{attr_name} = *")
+            else:
+                # Parse value (e.g., "SA_1_5" → last part is value index)
+                value_parts = value.split("_")
+                if len(value_parts) < 3:
+                    continue
+                
+                try:
+                    value_idx = int(value_parts[-1]) - 1  # Convert to 0-based indexing
+                except (ValueError, IndexError):
+                    continue
+                
+                # Get the attribute values list for this attribute
+                values = av.get(attr_name, [])
+                
+                # Validate value index
+                if not (0 <= value_idx < len(values)):
+                    continue
+                
+                actual_value = values[value_idx]
+                converted_parts.append(f"{attr_name} = {actual_value}")
         
-        healthcare_rules.append(", ".join(healthcare_rule_parts))
+        if converted_parts:
+            converted_rules.append(", ".join(converted_parts))
     
-    return healthcare_rules
+    return converted_rules
 
 # Convert accepted and denied rules to healthcare format
-accepted_healthcare_rules = convert_rules_to_healthcare(
+accepted_healthcare_rules = convert_rules_to_domain_format(
     accepted_rules,
     healthcare_output_format["SA_HC"],
     healthcare_output_format["OA_HC"],
@@ -464,7 +499,7 @@ accepted_healthcare_rules = convert_rules_to_healthcare(
     healthcare_output_format["EAV_HC"]
 )
 
-denied_healthcare_rules = convert_rules_to_healthcare(
+denied_healthcare_rules = convert_rules_to_domain_format(
     denied_rules,
     healthcare_output_format["SA_HC"],
     healthcare_output_format["OA_HC"],
@@ -745,74 +780,9 @@ print(f"  Objects: {len(university_output_format['O_UNI'])} ({', '.join(universi
 print(f"  Environments: {len(university_output_format['E_UNI'])} ({', '.join(university_output_format['E_UNI'][:2])}...)")
 
 # Convert rules to university format
-def convert_rules_to_university(rules, subject_attrs, object_attrs, environment_attrs,
-                               subject_av, object_av, environment_av):
-    """
-    Convert indexed rules (e.g., "SA_1 = SA_1_5") to university readable rules
-    using actual attribute names and values.
-    """
-    university_rules = []
-    for rule in rules:
-        rule_parts = rule.split(", ")
-        university_rule_parts = []
-        
-        for part in rule_parts:
-            if " = " in part:
-                key, value = part.split(" = ")
-                attr_type = key.split("_")[0]
-                
-                try:
-                    attr_idx = int(key.split("_")[1]) - 1
-                except:
-                    university_rule_parts.append(part)
-                    continue
-                
-                # Get the actual attribute name
-                if attr_type == "SA" and 0 <= attr_idx < len(subject_attrs):
-                    attr_name = subject_attrs[attr_idx]
-                elif attr_type == "OA" and 0 <= attr_idx < len(object_attrs):
-                    attr_name = object_attrs[attr_idx]
-                elif attr_type == "EA" and 0 <= attr_idx < len(environment_attrs):
-                    attr_name = environment_attrs[attr_idx]
-                else:
-                    university_rule_parts.append(part)
-                    continue
-                
-                # Handle value
-                if value.strip() == "*":
-                    university_rule_parts.append(f"{attr_name} = *")
-                else:
-                    value_parts = value.split("_")
-                    if len(value_parts) >= 3:
-                        try:
-                            value_idx = int(value_parts[-1]) - 1
-                            
-                            if attr_type == "SA" and 0 <= attr_idx < len(subject_attrs):
-                                values = subject_av.get(attr_name, [])
-                            elif attr_type == "OA" and 0 <= attr_idx < len(object_attrs):
-                                values = object_av.get(attr_name, [])
-                            elif attr_type == "EA" and 0 <= attr_idx < len(environment_attrs):
-                                values = environment_av.get(attr_name, [])
-                            else:
-                                values = []
-                            
-                            if 0 <= value_idx < len(values):
-                                actual_value = values[value_idx]
-                                university_rule_parts.append(f"{attr_name} = {actual_value}")
-                            else:
-                                university_rule_parts.append(part)
-                        except:
-                            university_rule_parts.append(part)
-                    else:
-                        university_rule_parts.append(part)
-            else:
-                university_rule_parts.append(part)
-        
-        university_rules.append(", ".join(university_rule_parts))
-    
-    return university_rules
 
-university_rules = convert_rules_to_university(
+# Convert rules to university format
+university_rules = convert_rules_to_domain_format(
     accepted_rules,
     university_output_format["SA_UNI"],
     university_output_format["OA_UNI"],
@@ -822,7 +792,7 @@ university_rules = convert_rules_to_university(
     university_output_format["EAV_UNI"]
 )
 
-denied_university_rules = convert_rules_to_university(
+denied_university_rules = convert_rules_to_domain_format(
     denied_rules,
     university_output_format["SA_UNI"],
     university_output_format["OA_UNI"],
