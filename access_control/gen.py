@@ -573,8 +573,8 @@ def fill_matrix_with_rules(A, SV, OV, EV, accepted_rules, denied_rules, n1, n2, 
                     A[i][j][k] = 0 if matches_denied else 1
                 else:
                     # Case 4: Both accepted and denied - accepted takes precedence
-                    # Accepted matches: 1, else deny: 0
-                    A[i][j][k] = 1 if matches_accepted else 0
+                    # 1 is matched only when it is accepted and does not match deny
+                    A[i][j][k] = 1 if (matches_accepted and not matches_denied) else 0
                 
                 no_of_ones += A[i][j][k]
 
