@@ -162,7 +162,8 @@
                             <li><code>subject_size</code>, <code>object_size</code>, <code>environment_size</code> (number)</li>
                             <li><code>permit_rules_count</code>, <code>deny_rules_count</code> (number)</li>
                             <li><code>subject_attributes_count</code>, <code>object_attributes_count</code>, <code>environment_attributes_count</code> (number)</li>
-                            <li><code>subject_attributes_values</code>, <code>object_attributes_values</code>, <code>environment_attributes_values</code> (array of numbers)</li>
+                            <li><code>subject_attributes_values</code>, <code>object_attributes_values</code>, <code>environment_attributes_values</code> (array of numbers or <code>[count, stars]</code> pairs)</li>
+                            <li><code>global_stars</code> (optional number, used as default for numeric entries)</li>
                             <li><code>subject_distributions</code>, <code>object_distributions</code>, <code>environment_distributions</code> (array of objects)</li>
                         </ul>
         </div>
@@ -170,9 +171,16 @@
                     <div class="schema-section">
                         <div class="schema-section-title">Distributions format</div>
                         <div class="schema-note">
-                            Each item supports a <code>distribution</code> code like <code>"N"</code> (Normal),
+                            Each distribution item supports a <code>distribution</code> code like <code>"N"</code> (Normal),
                             <code>"P"</code> (Poisson), <code>"U"</code> (Uniform). Some distributions may include
                             parameters like <code>mean</code>/<code>variance</code> or <code>lambda</code>.
+                        </div>
+                    </div>
+                    <div class="schema-section">
+                        <div class="schema-section-title">Star format</div>
+                        <div class="schema-note">
+                            In attribute value arrays, use either a single number like <code>5</code> or
+                            a pair like <code>[5, 2]</code> where the second value is the wildcard star count.
                         </div>
                     </div>
     

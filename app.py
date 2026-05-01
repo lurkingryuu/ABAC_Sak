@@ -21,6 +21,8 @@ import io
 import zipfile
 import time
 from dotenv import load_dotenv
+from typing import Any, Union
+from pydantic import BaseModel, ConfigDict, ValidationError, conint, model_validator
 
 # Import handdrawn processor
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'handdrawn'))
@@ -335,6 +337,104 @@ def job_paths(job_id: str):
     }
 
 
+ABACPositiveInt = conint(ge=1, strict=True)
+ABACNonNegativeInt = conint(ge=0, strict=True)
+ABACStarTuple = tuple[ABACPositiveInt, ABACNonNegativeInt]
+ABACAttributeValue = Union[ABACPositiveInt, ABACStarTuple]
+
+
+class ABACPayload(BaseModel):
+    model_config = ConfigDict(extra='allow')
+
+    subject_size: ABACPositiveInt
+    object_size: ABACPositiveInt
+    environment_size: ABACPositiveInt
+
+    subject_attributes_count: ABACPositiveInt
+    object_attributes_count: ABACPositiveInt
+    environment_attributes_count: ABACPositiveInt
+
+    permit_rules_count: ABACNonNegativeInt
+    deny_rules_count: ABACNonNegativeInt
+    global_stars: ABACNonNegativeInt | None = None
+
+    subject_attributes_values: list[ABACAttributeValue]
+    object_attributes_values: list[ABACAttributeValue]
+    environment_attributes_values: list[ABACAttributeValue]
+
+    subject_distributions: list[dict[str, Any]]
+    object_distributions: list[dict[str, Any]]
+    environment_distributions: list[dict[str, Any]]
+
+    @model_validator(mode='after')
+    def validate_lengths(self):
+        checks = [
+            ('subject_attributes_values', self.subject_attributes_values, self.subject_attributes_count, 'subject_attributes_count'),
+            ('object_attributes_values', self.object_attributes_values, self.object_attributes_count, 'object_attributes_count'),
+            ('environment_attributes_values', self.environment_attributes_values, self.environment_attributes_count, 'environment_attributes_count'),
+            ('subject_distributions', self.subject_distributions, self.subject_attributes_count, 'subject_attributes_count'),
+            ('object_distributions', self.object_distributions, self.object_attributes_count, 'object_attributes_count'),
+            ('environment_distributions', self.environment_distributions, self.environment_attributes_count, 'environment_attributes_count'),
+        ]
+        for name, values, expected, expected_name in checks:
+            if len(values) != expected:
+                raise ValueError(f"{name} length must match {expected_name}")
+        return self
+
+
+def _format_validation_error(exc: ValidationError) -> str:
+    error = exc.errors()[0]
+    location = ".".join(str(part) for part in error.get("loc", []))
+    msg = error.get("msg", "Invalid payload")
+    if error.get("type") == "missing" and location:
+        return f"Missing required fields: {location}"
+    if location:
+        return f"{location}: {msg}"
+    return str(msg)
+
+
+def validate_abac_payload(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("JSON payload must be an object")
+    try:
+        ABACPayload.model_validate(payload)
+    except ValidationError as exc:
+        raise ValueError(_format_validation_error(exc)) from None
+
+
+def _has_star_tuple(values):
+    return any(isinstance(item, list) and len(item) == 2 for item in values)
+
+
+def merge_multimodal_configs(min_config, extracted_config):
+    # Keep existing behavior by default: extracted definitions override minimal JSON.
+    final_config = {**min_config, **extracted_config}
+
+    # Preserve user star controls unless extracted config explicitly provides star-aware values.
+    star_value_keys = [
+        'subject_attributes_values',
+        'object_attributes_values',
+        'environment_attributes_values',
+    ]
+    for key in star_value_keys:
+        if key not in min_config or key not in extracted_config:
+            continue
+        min_values = min_config.get(key)
+        extracted_values = extracted_config.get(key)
+        if (
+            isinstance(min_values, list)
+            and isinstance(extracted_values, list)
+            and _has_star_tuple(min_values)
+            and not _has_star_tuple(extracted_values)
+        ):
+            final_config[key] = min_values
+
+    if 'global_stars' in min_config and 'global_stars' not in extracted_config:
+        final_config['global_stars'] = min_config['global_stars']
+
+    return final_config
+
+
 def process_file_background(job_id):
     """Process file in background thread"""
     try:
@@ -519,9 +619,8 @@ def process_multimodal_background(job_id):
         except Exception as e:
             raise RuntimeError(f"Failed to read minimal JSON: {str(e)}")
 
-        # Merge: extracted config takes precedence for attribute definitions,
-        # minimal config provides sizes/counts
-        final_config = {**min_config, **extracted_config}
+        final_config = merge_multimodal_configs(min_config, extracted_config)
+        validate_abac_payload(final_config)
         
         # Save merged input.json
         with open(input_json_path, 'w') as f:
@@ -680,9 +779,9 @@ def get_schema_json():
 
 @app.route('/example', methods=['GET'])
 def get_example_json():
-    """Return example JSON (dataset/input5.json)"""
+    """Return example JSON (dataset/input_with_star.json)"""
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    example_path = os.path.join(base_dir, 'dataset', 'input5.json')
+    example_path = os.path.join(base_dir, 'dataset', 'input_with_star.json')
 
     try:
         with open(example_path, 'r', encoding='utf-8') as f:
@@ -791,21 +890,12 @@ def upload_json():
                 'error': 'reCAPTCHA verification failed. Please try again.'
             }), 400
 
-        # Validate JSON structure (basic validation)
-        required_fields = [
-            'subject_size', 'object_size', 'environment_size',
-            'subject_attributes_count', 'object_attributes_count',
-            'environment_attributes_count', 'permit_rules_count',
-            'deny_rules_count'
-        ]
-        missing_fields = [
-            field for field in required_fields if field not in data
-        ]
-        if missing_fields:
-            fields_str = ', '.join(missing_fields)
+        try:
+            validate_abac_payload(data)
+        except ValueError as validation_error:
             return jsonify({
                 'success': False,
-                'error': f'Missing required fields: {fields_str}'
+                'error': str(validation_error)
             }), 400
 
         # Create background job

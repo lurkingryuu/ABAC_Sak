@@ -15,6 +15,10 @@
             "type": "integer",
             "minimum": 1
         },
+        "global_stars": {
+            "type": "integer",
+            "minimum": 0
+        },
         "permit_rules_count": {
             "type": "integer",
             "minimum": 0
@@ -38,22 +42,79 @@
         "subject_attributes_values": {
             "type": "array",
             "items": {
-                "type": "integer",
-                "minimum": 1
+                "oneOf": [
+                    {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    {
+                        "type": "array",
+                        "items": [
+                            {
+                                "type": "integer",
+                                "minimum": 1
+                            },
+                            {
+                                "type": "integer",
+                                "minimum": 0
+                            }
+                        ],
+                        "minItems": 2,
+                        "maxItems": 2
+                    }
+                ]
             }
         },
         "object_attributes_values": {
             "type": "array",
             "items": {
-                "type": "integer",
-                "minimum": 1
+                "oneOf": [
+                    {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    {
+                        "type": "array",
+                        "items": [
+                            {
+                                "type": "integer",
+                                "minimum": 1
+                            },
+                            {
+                                "type": "integer",
+                                "minimum": 0
+                            }
+                        ],
+                        "minItems": 2,
+                        "maxItems": 2
+                    }
+                ]
             }
         },
         "environment_attributes_values": {
             "type": "array",
             "items": {
-                "type": "integer",
-                "minimum": 1
+                "oneOf": [
+                    {
+                        "type": "integer",
+                        "minimum": 1
+                    },
+                    {
+                        "type": "array",
+                        "items": [
+                            {
+                                "type": "integer",
+                                "minimum": 1
+                            },
+                            {
+                                "type": "integer",
+                                "minimum": 0
+                            }
+                        ],
+                        "minItems": 2,
+                        "maxItems": 2
+                    }
+                ]
             }
         },
         "subject_distributions": {
