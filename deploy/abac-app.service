@@ -9,7 +9,7 @@ WorkingDirectory=/home/ubuntu/apps/ABAC_Sak
 EnvironmentFile=/home/ubuntu/apps/ABAC_Sak/.env
 ExecStart=/home/ubuntu/apps/ABAC_Sak/.venv/bin/gunicorn \
     --bind 0.0.0.0:5001 \
-    --workers 2 \
+    --workers 1 \
     --timeout 120 \
     app:app
 Restart=always
