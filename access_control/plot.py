@@ -55,11 +55,20 @@ config = configparser.ConfigParser()
 config.read(CONFIG_PATH)
 
 def parse_attributes(section):
-    return {
+    out = {
         "count": int(config[section]["count"]),
         "values": list(map(int, config[section]["values"].split(','))),
-        "distributions": json.loads(config[section]["distributions"])
+        "distributions": json.loads(config[section]["distributions"]),
     }
+    corr_raw = config[section].get("correlations", "{}")
+    if corr_raw:
+        try:
+            out["correlations"] = json.loads(corr_raw)
+        except json.JSONDecodeError:
+            out["correlations"] = {}
+    else:
+        out["correlations"] = {}
+    return out
 
 subject_attributes = parse_attributes("SUBJECT_ATTRIBUTES")
 object_attributes = parse_attributes("OBJECT_ATTRIBUTES")
@@ -285,20 +294,222 @@ sa_summary, sa_overall = compute_error_summary(SA_values, SA_expected_counts, SA
 oa_summary, oa_overall = compute_error_summary(OA_values, OA_expected_counts, OA_counts)
 ea_summary, ea_overall = compute_error_summary(EA_values, EA_expected_counts, EA_counts)
 
+def _expected_probs_per_attribute(attribute_values, distributions, n_entities):
+    """Return dict attr_key -> list of probs aligned with attribute_values[attr_key] order."""
+    probs_by_attr = {}
+    for i, (key, values) in enumerate(attribute_values.items()):
+        dist = distributions[i]
+        n = len(values)
+        dist_type = dist["distribution"]
+        if dist_type == "N":
+            mean = dist.get("mean", (n + 1) / 2.0)
+            variance = dist.get("variance", (n / 6.0) ** 2)
+            sigma = math.sqrt(variance)
+            low, high = 0.0, float(n)
+            a, b = (low - mean) / sigma, (high - mean) / sigma
+            probs = []
+            for k in range(1, n + 1):
+                cdf_right = truncnorm.cdf(k, a, b, loc=mean, scale=sigma)
+                cdf_left = truncnorm.cdf(k - 1, a, b, loc=mean, scale=sigma)
+                probs.append(cdf_right - cdf_left)
+            total_p = sum(probs)
+            if total_p > 0:
+                probs = [p / total_p for p in probs]
+        elif dist_type == "P":
+            lam = dist["lambda"]
+            weights = [
+                ((lam ** (j + 1)) * math.exp(-lam)) / math.factorial(j + 1)
+                for j in range(n)
+            ]
+            tw = sum(weights)
+            probs = [w / tw for w in weights]
+        elif dist_type == "U":
+            probs = [1.0 / n] * n
+        else:
+            raise ValueError(dist_type)
+        probs_by_attr[key] = probs
+    return probs_by_attr
+
+
+def _joint_target_from_pair(pair, card_a, card_b, marginal_a, marginal_b):
+    target = pair.get("target", {})
+    if "joint_table" in target:
+        tbl = np.array(target["joint_table"], dtype=float)
+        s = tbl.sum()
+        if s <= 0:
+            raise ValueError("joint_table sum must be positive")
+        return tbl / s
+    if "cramers_v" in target:
+        strength = float(target["cramers_v"])
+        ma = np.asarray(marginal_a, dtype=float)
+        mb = np.asarray(marginal_b, dtype=float)
+        ma = ma / ma.sum()
+        mb = mb / mb.sum()
+        base = np.outer(ma, mb)
+        diagonal = np.zeros_like(base)
+        dlen = min(card_a, card_b)
+        for d in range(dlen):
+            diagonal[d, d] = 1.0 / dlen
+        jt = (1.0 - strength) * base + strength * diagonal
+        return jt / jt.sum()
+    raise ValueError("pair target needs joint_table or cramers_v")
+
+
+def _empirical_joint(assigned_values, av, prefix, attr_a, attr_b):
+    """attr_a, attr_b are 1-based indices. Returns matrix len(SA_a) x len(SA_b)."""
+    key_a = f"{prefix}_{attr_a}"
+    key_b = f"{prefix}_{attr_b}"
+    vals_a = av[key_a]
+    vals_b = av[key_b]
+    n = len(assigned_values)
+    mat = np.zeros((len(vals_a), len(vals_b)), dtype=float)
+    if n == 0:
+        return mat
+    for _ent, attrs in assigned_values.items():
+        tok_a = attrs[attr_a - 1]
+        tok_b = attrs[attr_b - 1]
+        ia = vals_a.index(tok_a)
+        ib = vals_b.index(tok_b)
+        mat[ia, ib] += 1.0
+    mat /= float(n)
+    return mat
+
+
+def _chi2_cramers_v(observed_counts, expected_counts):
+    """observed_counts / expected_counts: same shape, not normalized (use raw counts)."""
+    mask = expected_counts > 0
+    chi2 = float(np.sum(
+        (observed_counts[mask] - expected_counts[mask]) ** 2 / expected_counts[mask]
+    ))
+    ntot = float(np.sum(observed_counts))
+    r, c = observed_counts.shape
+    denom = ntot * min(max(r - 1, 1), max(c - 1, 1))
+    if denom <= 0:
+        return chi2, 0.0
+    v = math.sqrt(max(chi2, 0.0) / denom)
+    return chi2, min(v, 1.0)
+
+
+def compute_correlation_metrics(entity_name, prefix, av, assigned_values, attr_block, distributions):
+    """
+    attr_block: subject_attributes etc. with 'values', 'distributions', 'correlations'
+    Returns list of dicts with L1, chi2, cramers_v_actual, target info.
+    """
+    pairs = (attr_block.get("correlations") or {}).get("pairs") or []
+    if not pairs:
+        return []
+    probs_by = _expected_probs_per_attribute(av, distributions, len(assigned_values))
+    n_ent = len(assigned_values)
+    results = []
+    for pidx, pair in enumerate(pairs):
+        a = int(pair["attr_a"])
+        b = int(pair["attr_b"])
+        key_a = f"{prefix}_{a}"
+        key_b = f"{prefix}_{b}"
+        card_a = len(av[key_a])
+        card_b = len(av[key_b])
+        ma = probs_by[key_a]
+        mb = probs_by[key_b]
+        target = _joint_target_from_pair(pair, card_a, card_b, ma, mb)
+        obs_p = _empirical_joint(assigned_values, av, prefix, a, b)
+        l1 = float(np.sum(np.abs(obs_p - target)))
+        exp_c = target * n_ent
+        obs_c = obs_p * n_ent
+        chi2, v_obs = _chi2_cramers_v(obs_c, exp_c)
+        entry = {
+            "entity": entity_name,
+            "pair_index": pidx,
+            "attr_a": a,
+            "attr_b": b,
+            "l1_joint_distance": round(l1, 6),
+            "chi2_vs_target": round(chi2, 6),
+            "cramers_v_vs_target": round(v_obs, 6),
+            "weight": float(pair.get("weight", 1.0)),
+        }
+        if "cramers_v" in pair.get("target", {}):
+            entry["cramers_v_requested"] = float(pair["target"]["cramers_v"])
+        results.append(entry)
+    return results
+
+
+def generate_correlation_plots(
+    entity_slug, prefix, av, assigned_values, attr_block, distributions
+):
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError(
+            "matplotlib is required for correlation plots."
+        ) from e
+
+    pairs = (attr_block.get("correlations") or {}).get("pairs") or []
+    if not pairs:
+        return
+    probs_by = _expected_probs_per_attribute(av, distributions, len(assigned_values))
+    for pidx, pair in enumerate(pairs):
+        a = int(pair["attr_a"])
+        b = int(pair["attr_b"])
+        key_a = f"{prefix}_{a}"
+        key_b = f"{prefix}_{b}"
+        card_a = len(av[key_a])
+        card_b = len(av[key_b])
+        ma = probs_by[key_a]
+        mb = probs_by[key_b]
+        target = _joint_target_from_pair(pair, card_a, card_b, ma, mb)
+        obs = _empirical_joint(assigned_values, av, prefix, a, b)
+        vmax = max(float(target.max()), float(obs.max()), 1e-9)
+        fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+        for ax, mat, title in (
+            (axes[0], target, "Target joint P(i,j)"),
+            (axes[1], obs, "Observed joint (data)"),
+        ):
+            im = ax.imshow(mat, vmin=0.0, vmax=vmax, cmap="viridis")
+            ax.set_title(title)
+            ax.set_xlabel(key_b)
+            ax.set_ylabel(key_a)
+            ax.set_xticks(range(card_b))
+            ax.set_yticks(range(card_a))
+            ax.set_xticklabels([f"{j+1}" for j in range(card_b)])
+            ax.set_yticklabels([f"{i+1}" for i in range(card_a)])
+            fig.colorbar(im, ax=ax, fraction=0.046)
+        l1 = float(np.sum(np.abs(obs - target)))
+        fig.suptitle(f"{entity_slug}: {key_a} vs {key_b} (L1={l1:.4f})")
+        out_name = f"correlation_{entity_slug}_{prefix}{a}_{prefix}{b}.png"
+        plot_path = os.path.join(PLOTS_FOLDER, out_name)
+        plt.tight_layout()
+        plt.savefig(plot_path)
+        plt.close()
+        print(f"Correlation plot: {plot_path}")
+
+
+corr_subject = compute_correlation_metrics(
+    "subject", "SA", SA_values, SV, subject_attributes, subject_attributes["distributions"]
+)
+corr_object = compute_correlation_metrics(
+    "object", "OA", OA_values, OV, object_attributes, object_attributes["distributions"]
+)
+corr_environment = compute_correlation_metrics(
+    "environment", "EA", EA_values, EV, environment_attributes, environment_attributes["distributions"]
+)
+correlation_report = corr_subject + corr_object + corr_environment
+_mean_l1s = [c["l1_joint_distance"] for c in correlation_report]
+_mean_chi = [c["chi2_vs_target"] for c in correlation_report]
+
 error_report = {
     "SA": {"per_attribute": sa_summary, "mean_error": sa_overall},
     "OA": {"per_attribute": oa_summary, "mean_error": oa_overall},
     "EA": {"per_attribute": ea_summary, "mean_error": ea_overall},
-    "overall_mean_error": float(np.mean([sa_overall, oa_overall, ea_overall]))
+    "overall_mean_error": float(np.mean([sa_overall, oa_overall, ea_overall])),
+    "correlations": {
+        "pairs": correlation_report,
+        "mean_l1_joint_distance": float(np.mean(_mean_l1s)) if _mean_l1s else None,
+        "mean_chi2_vs_target": float(np.mean(_mean_chi)) if _mean_chi else None,
+        "pair_count": len(correlation_report),
+    },
+    "generation_diagnostics": output_data.get("generation_diagnostics"),
 }
-
-# write JSON summary to outputs folder
-# OUT_DIR = _out_dir
-# os.makedirs(OUT_DIR, exist_ok=True)
-# with open(os.path.join(OUT_DIR, 'error_summary.json'), 'w') as fh:
-#     json.dump(error_report, fh, indent=4)
-
-print("Error summary written to outputs/error_summary.json")
 
 
 def main(argv=None) -> int:
@@ -321,17 +532,26 @@ def main(argv=None) -> int:
     )
     args = parser.parse_args(argv)
 
-    # error summary (default on)
+    os.makedirs(_out_dir, exist_ok=True)
     if not args.no_error_summary:
-        # Computation already happened at module load; just ensure file exists.
-        # (Keeping changes minimal vs. a larger refactor to fully lazy-load data.)
-        pass
+        summary_path = os.path.join(_out_dir, "error_summary.json")
+        with open(summary_path, "w", encoding="utf-8") as fh:
+            json.dump(error_report, fh, indent=4)
+        print(f"Error summary written to {summary_path}")
 
-    # plots (opt-in)
     if args.plots:
         generate_plots(SA_values, SA_expected_counts, SA_counts)
         generate_plots(OA_values, OA_expected_counts, OA_counts)
         generate_plots(EA_values, EA_expected_counts, EA_counts)
+        generate_correlation_plots(
+            "subject", "SA", SA_values, SV, subject_attributes, subject_attributes["distributions"]
+        )
+        generate_correlation_plots(
+            "object", "OA", OA_values, OV, object_attributes, object_attributes["distributions"]
+        )
+        generate_correlation_plots(
+            "environment", "EA", EA_values, EV, environment_attributes, environment_attributes["distributions"]
+        )
         print(f"Plots saved in {PLOTS_FOLDER}")
 
     return 0
