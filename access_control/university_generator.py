@@ -9,6 +9,27 @@ from faker import Faker
 
 load_dotenv()
 
+def extract_attribute_counts(raw_values: List) -> List[int]:
+    """
+    Parse attribute values that can be:
+    - A single number: e.g., 5 (means 5 values)
+    - A pair: e.g., [5, 2] (means 5 values, 2 stars)
+    
+    Returns: list of just the count values (integers)
+    
+    Example:
+        [6, [5, 2], 4, [3, 1]] -> [6, 5, 4, 3]
+    """
+    counts = []
+    for item in raw_values:
+        if isinstance(item, list):
+            # Pair: [num_values, num_stars] - extract first element
+            counts.append(item[0])
+        else:
+            # Single number
+            counts.append(item)
+    return counts
+
 # Initialize Faker
 fake = Faker()
 
@@ -289,14 +310,19 @@ def generate_university_data_with_gemini(config_ini_path: str = None,
     uni_data['environment_attributes'] = environment_attrs
 
     # Attribute values
+    # Extract just the counts from mixed format (single number or [number, stars] pair)
+    subject_counts = extract_attribute_counts(config['subject_attributes_values'])
+    object_counts = extract_attribute_counts(config['object_attributes_values'])
+    environment_counts = extract_attribute_counts(config['environment_attributes_values'])
+    
     subject_av, object_av, environment_av = generate_all_attribute_values(
         model,
         subject_attrs,
         object_attrs,
         environment_attrs,
-        config['subject_attributes_values'],
-        config['object_attributes_values'],
-        config['environment_attributes_values']
+        subject_counts,
+        object_counts,
+        environment_counts
     )
 
     uni_data['subject_attribute_values'] = subject_av

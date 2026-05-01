@@ -51,9 +51,19 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 # Parse attributes from config.ini
 def parse_attributes(section):
     correlations_raw = config[section].get("correlations", "{}")
+    count = int(config[section]["count"])
+    stars_raw = config[section].get("stars", "")
+    if stars_raw.strip():
+        stars = list(map(int, stars_raw.split(",")))
+    else:
+        stars = [0] * count
+    # Defensive: ensure stars list length matches count.
+    if len(stars) != count:
+        stars = (stars + ([0] * count))[:count]
     return {
-        "count": int(config[section]["count"]),
+        "count": count,
         "values": list(map(int, config[section]["values"].split(','))),
+        "stars": stars,
         "distributions": json.loads(config[section]["distributions"]),
         "correlations": json.loads(correlations_raw) if correlations_raw else {},
     }
@@ -480,12 +490,35 @@ output_data["generation_diagnostics"] = {
 
 #############################
 
-# Generate accepted and denied rules
+# Generate permit and deny rules
 permit_rules_count = int(config["RULES"]["permit_rules_count"])
 deny_rules_count = int(config["RULES"]["deny_rules_count"])
 
-permit_rules = gen_rules.generate_rules_2(permit_rules_count, n4, n5, n6, SV, OV, EV) if permit_rules_count > 0 else []
-deny_rules = gen_rules.generate_rules_2(deny_rules_count, n4, n5, n6, SV, OV, EV) if deny_rules_count > 0 else []
+permit_rules = gen_rules.generate_rules_2(
+    permit_rules_count,
+    n4,
+    n5,
+    n6,
+    SV,
+    OV,
+    EV,
+    subject_stars=subject_attributes.get("stars"),
+    object_stars=object_attributes.get("stars"),
+    environment_stars=environment_attributes.get("stars"),
+) if permit_rules_count > 0 else []
+
+deny_rules = gen_rules.generate_rules_2(
+    deny_rules_count,
+    n4,
+    n5,
+    n6,
+    SV,
+    OV,
+    EV,
+    subject_stars=subject_attributes.get("stars"),
+    object_stars=object_attributes.get("stars"),
+    environment_stars=environment_attributes.get("stars"),
+) if deny_rules_count > 0 else []
 
 # Integrate generated rules into output.json as well
 output_data["permit_rules"] = permit_rules
@@ -521,8 +554,8 @@ if not ENABLE_MEANINGFUL_NAMES:
     def fill_matrix_with_rules(A, SV, OV, EV, permit_rules, deny_rules, n1, n2, n3):
         global no_of_ones
 
-        has_accepted = len(permit_rules) > 0
-        has_denied = len(deny_rules) > 0
+        has_permit = len(permit_rules) > 0
+        has_deny = len(deny_rules) > 0
 
         for i in range(n1):
             for j in range(n2):
@@ -531,17 +564,17 @@ if not ENABLE_MEANINGFUL_NAMES:
                     OA1 = OV[f"O_{j + 1}"]
                     EA1 = EV[f"E_{k + 1}"]
 
-                    matches_accepted = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in permit_rules) if has_accepted else False
-                    matches_denied = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in deny_rules) if has_denied else False
+                    matches_permit = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in permit_rules) if has_permit else False
+                    matches_deny = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in deny_rules) if has_deny else False
 
-                    if not has_accepted and not has_denied:
+                    if not has_permit and not has_deny:
                         A[i][j][k] = 0
-                    elif has_accepted and not has_denied:
-                        A[i][j][k] = 1 if matches_accepted else 0
-                    elif not has_accepted and has_denied:
-                        A[i][j][k] = 0 if matches_denied else 1
+                    elif has_permit and not has_deny:
+                        A[i][j][k] = 1 if matches_permit else 0
+                    elif not has_permit and has_deny:
+                        A[i][j][k] = 0 if matches_deny else 1
                     else:
-                        A[i][j][k] = 1 if matches_accepted else 0
+                        A[i][j][k] = 1 if (matches_permit and not matches_deny) else 0
 
                     no_of_ones += A[i][j][k]
 
@@ -631,88 +664,103 @@ print("\n" + "="*60)
 print("CONVERTING RULES TO HEALTHCARE FORMAT")
 print("="*60)
 
-def convert_rules_to_healthcare(rules, subject_attrs, object_attrs, environment_attrs, 
-                                subject_av, object_av, environment_av):
+def convert_rules_to_domain_format(rules, subject_attrs, object_attrs, environment_attrs,
+                                   subject_av, object_av, environment_av):
     """
-    Convert indexed rules (SA_1 = SA_1_5) to healthcare format (employee_id = licensed).
+    Convert indexed rules (SA_1 = SA_1_5) to domain format (role = physician).
     
     Mapping:
-    - SA_1 → first subject attribute name
-    - SA_1_5 → 5th value of first subject attribute
-    - SA_1 = * → keep * but replace SA_1 with actual attribute name
+    - SA_1 = SA_1_5: Use subject_attrs[0] as key, subject_av[subject_attrs[0]][4] as value
+    - SA_1 = *: Keep wildcard, use subject_attrs[0] as key
+    - Maintains order of attributes in rule
+    
+    Args:
+        rules: List of rules with indexed notation (SA_1 = SA_1_5, ...)
+        subject_attrs: List of subject attribute names
+        object_attrs: List of object attribute names
+        environment_attrs: List of environment attribute names
+        subject_av: Dict[attr_name] -> List[values]
+        object_av: Dict[attr_name] -> List[values]
+        environment_av: Dict[attr_name] -> List[values]
+    
+    Returns:
+        List of converted rules with actual attribute names and values
     """
-    healthcare_rules = []
+    converted_rules = []
     
     for rule in rules:
         rule_parts = rule.split(", ")
-        healthcare_rule_parts = []
+        converted_parts = []
         
         for part in rule_parts:
-            if "=" in part:
-                key, value = part.split(" = ")
-                
-                # Parse the key (e.g., "SA_1" → attr_type="SA", attr_idx=1)
-                key_parts = key.split("_")
-                if len(key_parts) >= 2:
-                    attr_type = key_parts[0]  # "SA", "OA", "EA"
-                    try:
-                        attr_idx = int(key_parts[1]) - 1  # Convert to 0-based
-                    except:
-                        healthcare_rule_parts.append(part)
-                        continue
-                    
-                    # Get the actual attribute name
-                    if attr_type == "SA" and 0 <= attr_idx < len(subject_attrs):
-                        attr_name = subject_attrs[attr_idx]
-                    elif attr_type == "OA" and 0 <= attr_idx < len(object_attrs):
-                        attr_name = object_attrs[attr_idx]
-                    elif attr_type == "EA" and 0 <= attr_idx < len(environment_attrs):
-                        attr_name = environment_attrs[attr_idx]
-                    else:
-                        healthcare_rule_parts.append(part)
-                        continue
-                    
-                    # Handle value
-                    if value.strip() == "*":
-                        # Keep * as is
-                        healthcare_rule_parts.append(f"{attr_name} = *")
-                    else:
-                        # Parse value (e.g., "SA_1_5" → value_idx=5)
-                        value_parts = value.split("_")
-                        if len(value_parts) >= 3:
-                            try:
-                                value_idx = int(value_parts[-1]) - 1  # Convert to 0-based
-                                
-                                # Get the actual attribute value
-                                if attr_type == "SA" and 0 <= attr_idx < len(subject_attrs):
-                                    values = subject_av.get(attr_name, [])
-                                elif attr_type == "OA" and 0 <= attr_idx < len(object_attrs):
-                                    values = object_av.get(attr_name, [])
-                                elif attr_type == "EA" and 0 <= attr_idx < len(environment_attrs):
-                                    values = environment_av.get(attr_name, [])
-                                else:
-                                    values = []
-                                
-                                if 0 <= value_idx < len(values):
-                                    actual_value = values[value_idx]
-                                    healthcare_rule_parts.append(f"{attr_name} = {actual_value}")
-                                else:
-                                    healthcare_rule_parts.append(part)
-                            except:
-                                healthcare_rule_parts.append(part)
-                        else:
-                            healthcare_rule_parts.append(part)
-                else:
-                    healthcare_rule_parts.append(part)
+            if "=" not in part:
+                continue
+            
+            key, value = part.split(" = ", 1)
+            key = key.strip()
+            value = value.strip()
+            
+            # Parse the key (e.g., "SA_1" → attr_type="SA", attr_idx=1)
+            key_parts = key.split("_")
+            if len(key_parts) < 2:
+                continue
+            
+            attr_type = key_parts[0]  # "SA", "OA", "EA"
+            try:
+                attr_idx = int(key_parts[1]) - 1  # Convert to 0-based indexing
+            except (ValueError, IndexError):
+                continue
+            
+            # Determine attribute list and value mapping
+            if attr_type == "SA":
+                attrs = subject_attrs
+                av = subject_av
+            elif attr_type == "OA":
+                attrs = object_attrs
+                av = object_av
+            elif attr_type == "EA":
+                attrs = environment_attrs
+                av = environment_av
             else:
-                healthcare_rule_parts.append(part)
+                continue
+            
+            # Validate attribute index
+            if not (0 <= attr_idx < len(attrs)):
+                continue
+            
+            attr_name = attrs[attr_idx]
+            
+            # Handle wildcard
+            if value == "*":
+                converted_parts.append(f"{attr_name} = *")
+            else:
+                # Parse value (e.g., "SA_1_5" → last part is value index)
+                value_parts = value.split("_")
+                if len(value_parts) < 3:
+                    continue
+                
+                try:
+                    value_idx = int(value_parts[-1]) - 1  # Convert to 0-based indexing
+                except (ValueError, IndexError):
+                    continue
+                
+                # Get the attribute values list for this attribute
+                values = av.get(attr_name, [])
+                
+                # Validate value index
+                if not (0 <= value_idx < len(values)):
+                    continue
+                
+                actual_value = values[value_idx]
+                converted_parts.append(f"{attr_name} = {actual_value}")
         
-        healthcare_rules.append(", ".join(healthcare_rule_parts))
+        if converted_parts:
+            converted_rules.append(", ".join(converted_parts))
     
-    return healthcare_rules
+    return converted_rules
 
-# Convert accepted and denied rules to healthcare format
-permit_healthcare_rules = convert_rules_to_healthcare(
+# Convert permit and deny rules to healthcare format
+permit_healthcare_rules = convert_rules_to_domain_format(
     permit_rules,
     healthcare_output_format["SA_HC"],
     healthcare_output_format["OA_HC"],
@@ -722,7 +770,7 @@ permit_healthcare_rules = convert_rules_to_healthcare(
     healthcare_output_format["EAV_HC"]
 )
 
-deny_healthcare_rules = convert_rules_to_healthcare(
+deny_healthcare_rules = convert_rules_to_domain_format(
     deny_rules,
     healthcare_output_format["SA_HC"],
     healthcare_output_format["OA_HC"],
@@ -732,8 +780,8 @@ deny_healthcare_rules = convert_rules_to_healthcare(
     healthcare_output_format["EAV_HC"]
 )
 
-print(f"✓ Accepted rules converted to healthcare format ({len(permit_healthcare_rules)} rules)")
-print(f"✓ Denied rules converted to healthcare format ({len(deny_healthcare_rules)} rules)")
+print(f"✓ Permit rules converted to healthcare format ({len(permit_healthcare_rules)} rules)")
+print(f"✓ Deny rules converted to healthcare format ({len(deny_healthcare_rules)} rules)")
 print(f"  Example healthcare rules:")
 for rule in permit_healthcare_rules[:1]:
     print(f"    {rule[:100]}...")
@@ -765,14 +813,14 @@ def fill_matrix_with_rules(A, SV, OV, EV, permit_rules, deny_rules, n1, n2, n3):
     """
     Fill ACM with precedence logic:
     - If both permit_rules = 0 and deny_rules = 0: everything is denied (acm = 0)
-    - If permit_rules > 0 and deny_rules = 0: current behavior (acm = 1 if matches accepted, else 0)
-    - If permit_rules = 0 and deny_rules > 0: acm = 0 if matches denied, else 1
-    - If both > 0: accepted rules take precedence (if matches both, acm = 1; if matches neither, acm = 0)
+    - If permit_rules > 0 and deny_rules = 0: current behavior (acm = 1 if matches permit, else 0)
+    - If permit_rules = 0 and deny_rules > 0: acm = 0 if matches deny, else 1
+    - If both > 0: permit rules take precedence (if matches both, acm = 1; if matches neither, acm = 0)
     """
     global no_of_ones
     
-    has_accepted = len(permit_rules) > 0
-    has_denied = len(deny_rules) > 0
+    has_permit = len(permit_rules) > 0
+    has_deny = len(deny_rules) > 0
     
     for i in range(n1):
         for j in range(n2):
@@ -781,23 +829,23 @@ def fill_matrix_with_rules(A, SV, OV, EV, permit_rules, deny_rules, n1, n2, n3):
                 OA1 = OV[f"O_{j + 1}"]
                 EA1 = EV[f"E_{k + 1}"]
                 
-                matches_accepted = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in permit_rules) if has_accepted else False
-                matches_denied = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in deny_rules) if has_denied else False
+                matches_permit = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in permit_rules) if has_permit else False
+                matches_deny = any(satisfies_rule(rule, SA1, OA1, EA1) for rule in deny_rules) if has_deny else False
                 
                 # Apply precedence logic
-                if not has_accepted and not has_denied:
+                if not has_permit and not has_deny:
                     # Case 1: Both 0 - everything denied
                     A[i][j][k] = 0
-                elif has_accepted and not has_denied:
-                    # Case 2: Only accepted rules - current behavior
-                    A[i][j][k] = 1 if matches_accepted else 0
-                elif not has_accepted and has_denied:
-                    # Case 3: Only denied rules - inverse logic
-                    A[i][j][k] = 0 if matches_denied else 1
+                elif has_permit and not has_deny:
+                    # Case 2: Only permit rules - current behavior
+                    A[i][j][k] = 1 if matches_permit else 0
+                elif not has_permit and has_deny:
+                    # Case 3: Only deny rules - inverse logic
+                    A[i][j][k] = 0 if matches_deny else 1
                 else:
                     # Case 4: Both accepted and denied - accepted takes precedence
-                    # Accepted matches: 1, else deny: 0
-                    A[i][j][k] = 1 if matches_accepted else 0
+                    # 1 is matched only when it is accepted and does not match deny
+                    A[i][j][k] = 1 if (matches_permit and not matches_deny) else 0
                 
                 no_of_ones += A[i][j][k]
 
@@ -908,7 +956,7 @@ output_data_hc["SV_HC"] = healthcare_output_format["SV_HC"]
 output_data_hc["OV_HC"] = healthcare_output_format["OV_HC"]
 output_data_hc["EV_HC"] = healthcare_output_format["EV_HC"]
 
-# Append healthcare rules (both accepted and denied)
+# Append healthcare rules (both permit and deny)
 output_data_hc["permit_rules_HC"] = permit_healthcare_rules
 output_data_hc["deny_rules_HC"] = deny_healthcare_rules
 
@@ -1003,74 +1051,8 @@ print(f"  Objects: {len(university_output_format['O_UNI'])} ({', '.join(universi
 print(f"  Environments: {len(university_output_format['E_UNI'])} ({', '.join(university_output_format['E_UNI'][:2])}...)")
 
 # Convert rules to university format
-def convert_rules_to_university(rules, subject_attrs, object_attrs, environment_attrs,
-                               subject_av, object_av, environment_av):
-    """
-    Convert indexed rules (e.g., "SA_1 = SA_1_5") to university readable rules
-    using actual attribute names and values.
-    """
-    university_rules = []
-    for rule in rules:
-        rule_parts = rule.split(", ")
-        university_rule_parts = []
-        
-        for part in rule_parts:
-            if " = " in part:
-                key, value = part.split(" = ")
-                attr_type = key.split("_")[0]
-                
-                try:
-                    attr_idx = int(key.split("_")[1]) - 1
-                except:
-                    university_rule_parts.append(part)
-                    continue
-                
-                # Get the actual attribute name
-                if attr_type == "SA" and 0 <= attr_idx < len(subject_attrs):
-                    attr_name = subject_attrs[attr_idx]
-                elif attr_type == "OA" and 0 <= attr_idx < len(object_attrs):
-                    attr_name = object_attrs[attr_idx]
-                elif attr_type == "EA" and 0 <= attr_idx < len(environment_attrs):
-                    attr_name = environment_attrs[attr_idx]
-                else:
-                    university_rule_parts.append(part)
-                    continue
-                
-                # Handle value
-                if value.strip() == "*":
-                    university_rule_parts.append(f"{attr_name} = *")
-                else:
-                    value_parts = value.split("_")
-                    if len(value_parts) >= 3:
-                        try:
-                            value_idx = int(value_parts[-1]) - 1
-                            
-                            if attr_type == "SA" and 0 <= attr_idx < len(subject_attrs):
-                                values = subject_av.get(attr_name, [])
-                            elif attr_type == "OA" and 0 <= attr_idx < len(object_attrs):
-                                values = object_av.get(attr_name, [])
-                            elif attr_type == "EA" and 0 <= attr_idx < len(environment_attrs):
-                                values = environment_av.get(attr_name, [])
-                            else:
-                                values = []
-                            
-                            if 0 <= value_idx < len(values):
-                                actual_value = values[value_idx]
-                                university_rule_parts.append(f"{attr_name} = {actual_value}")
-                            else:
-                                university_rule_parts.append(part)
-                        except:
-                            university_rule_parts.append(part)
-                    else:
-                        university_rule_parts.append(part)
-            else:
-                university_rule_parts.append(part)
-        
-        university_rules.append(", ".join(university_rule_parts))
-    
-    return university_rules
 
-university_rules = convert_rules_to_university(
+university_rules = convert_rules_to_domain_format(
     permit_rules,
     university_output_format["SA_UNI"],
     university_output_format["OA_UNI"],
@@ -1080,7 +1062,7 @@ university_rules = convert_rules_to_university(
     university_output_format["EAV_UNI"]
 )
 
-deny_university_rules = convert_rules_to_university(
+deny_university_rules = convert_rules_to_domain_format(
     deny_rules,
     university_output_format["SA_UNI"],
     university_output_format["OA_UNI"],
@@ -1090,8 +1072,8 @@ deny_university_rules = convert_rules_to_university(
     university_output_format["EAV_UNI"]
 )
 
-print(f"✓ Accepted rules converted to university format ({len(university_rules)} rules)")
-print(f"✓ Denied rules converted to university format ({len(deny_university_rules)} rules)")
+print(f"✓ Permit rules converted to university format ({len(university_rules)} rules)")
+print(f"✓ Deny rules converted to university format ({len(deny_university_rules)} rules)")
 print(f"  Example university rules:")
 for rule in university_rules[:1]:
     print(f"    {rule[:100]}...")
@@ -1162,7 +1144,7 @@ output_data_uni["SV_UNI"] = university_output_format["SV_UNI"]
 output_data_uni["OV_UNI"] = university_output_format["OV_UNI"]
 output_data_uni["EV_UNI"] = university_output_format["EV_UNI"]
 
-# Append university rules (both accepted and denied)
+# Append university rules (both permit and deny)
 output_data_uni["permit_rules_UNI"] = university_rules
 output_data_uni["deny_rules_UNI"] = deny_university_rules
 

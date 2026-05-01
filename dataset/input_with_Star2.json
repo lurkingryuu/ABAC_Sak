@@ -1,0 +1,80 @@
+{
+    "subject_size": 10,
+    "object_size": 15,
+    "environment_size": 5,
+    "subject_attributes_count": 3,
+    "object_attributes_count": 4,
+    "environment_attributes_count": 2,
+    "global_stars": 1,
+    "subject_attributes_values": [
+        [6, 2],
+        5,
+        [4, 1]
+    ],
+    "object_attributes_values": [
+        2,
+        [3, 2],
+        4,
+        [5, 1]
+    ],
+    "environment_attributes_values": [
+        [1, 1],
+        2
+    ],
+    "subject_mean": 3,
+    "subject_variance": 1,
+    "object_mean": 4,
+    "object_variance": 1.5,
+    "environment_mean": 2,
+    "environment_variance": 0.5,
+    "subject_distributions": [
+        {
+            "distribution": "N",
+            "mean": 3,
+            "variance": 1
+        },
+        {
+            "distribution": "N",
+            "mean": 3,
+            "variance": 1
+        },
+        {
+            "distribution": "P",
+            "lambda": 2
+        }
+    ],
+    "object_distributions": [
+        {
+            "distribution": "N",
+            "mean": 2,
+            "variance": 0.5
+        },
+        {
+            "distribution": "N",
+            "mean": 2,
+            "variance": 0.5
+        },
+        {
+            "distribution": "P",
+            "lambda": 2
+        },
+        {
+            "distribution": "U",
+            "low": 0,
+            "high": 5
+        }
+    ],
+    "environment_distributions": [
+        {
+            "distribution": "N",
+            "mean": 1,
+            "variance": 0.2
+        },
+        {
+            "distribution": "P",
+            "lambda": 1
+        }
+    ],
+    "permit_rules_count": 20,
+    "deny_rules_count": 5
+}

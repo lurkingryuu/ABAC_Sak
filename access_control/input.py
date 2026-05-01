@@ -34,6 +34,51 @@ def _normalize_joint_table(table):
     return [[v / total for v in row] for row in normalized]
 
 
+def _attribute_counts_only(raw_values):
+    """
+    Accepts mixed format values:
+    - int: 5
+    - pair: [5, 2]  (values, stars)
+
+    Returns list[int] containing only the value counts.
+    """
+    counts = []
+    for item in raw_values:
+        if isinstance(item, list):
+            if len(item) != 2:
+                raise ValueError("Attribute value pair must be [num_values, num_stars]")
+            counts.append(int(item[0]))
+        else:
+            counts.append(int(item))
+    return counts
+
+
+def parse_attribute_values_with_stars(raw_values, global_stars=0):
+    """
+    Parse attribute values that can be:
+    - A single number: e.g., 5 (means 5 values, uses global_stars for stars)
+    - A pair: e.g., [5, 2] (means 5 values, 2 stars)
+
+    Returns:
+    - num_values_list: list[int]
+    - num_stars_list: list[int]
+    """
+    num_values_list = []
+    num_stars_list = []
+
+    for item in raw_values:
+        if isinstance(item, list):
+            if len(item) != 2:
+                raise ValueError("Attribute value pair must be [num_values, num_stars]")
+            num_values_list.append(int(item[0]))
+            num_stars_list.append(int(item[1]))
+        else:
+            num_values_list.append(int(item))
+            num_stars_list.append(int(global_stars))
+
+    return num_values_list, num_stars_list
+
+
 def _validate_correlation_pairs(entity_name, pair_list, attribute_values):
     attribute_count = len(attribute_values)
     for idx, pair in enumerate(pair_list):
@@ -78,18 +123,23 @@ def validate_input_semantics(input_data):
     n5 = int(input_data["object_attributes_count"])
     n6 = int(input_data["environment_attributes_count"])
 
-    subject_values = input_data["subject_attributes_values"]
-    object_values = input_data["object_attributes_values"]
-    environment_values = input_data["environment_attributes_values"]
+    subject_values_raw = input_data["subject_attributes_values"]
+    object_values_raw = input_data["object_attributes_values"]
+    environment_values_raw = input_data["environment_attributes_values"]
     subject_distributions = input_data["subject_distributions"]
     object_distributions = input_data["object_distributions"]
     environment_distributions = input_data["environment_distributions"]
 
-    _ensure_lengths("subject", subject_values, subject_distributions, n4)
-    _ensure_lengths("object", object_values, object_distributions, n5)
-    _ensure_lengths("environment", environment_values, environment_distributions, n6)
+    _ensure_lengths("subject", subject_values_raw, subject_distributions, n4)
+    _ensure_lengths("object", object_values_raw, object_distributions, n5)
+    _ensure_lengths("environment", environment_values_raw, environment_distributions, n6)
 
     correlations = input_data.get("correlations", {})
+    # Correlation validation expects plain integer domains; if the user provided
+    # star-pairs ([values, stars]) we validate using the extracted value counts.
+    subject_values = _attribute_counts_only(subject_values_raw)
+    object_values = _attribute_counts_only(object_values_raw)
+    environment_values = _attribute_counts_only(environment_values_raw)
     for entity_name, values in (
         ("subject", subject_values),
         ("object", object_values),
@@ -100,9 +150,28 @@ def validate_input_semantics(input_data):
         _validate_correlation_pairs(entity_name, pair_list, values)
 
 
-def write_config_file(n1, n2, n3, n4, n5, n6, subject_attributes, object_attributes, environment_attributes, permit_rules, deny_rules, seed=None, sampling_config=None):
+def write_config_file(
+    n1,
+    n2,
+    n3,
+    n4,
+    n5,
+    n6,
+    subject_attributes,
+    object_attributes,
+    environment_attributes,
+    permit_rules,
+    deny_rules,
+    seed=None,
+    sampling_config=None,
+):
     """
     Write the configuration to config.ini.
+    
+    subject_attributes, object_attributes, environment_attributes each should have:
+    - "values": list of number of values per attribute
+    - "stars": list of number of stars per attribute (optional)
+    - "distributions": list of distribution dicts
     """
     config = configparser.ConfigParser()
     
@@ -121,6 +190,7 @@ def write_config_file(n1, n2, n3, n4, n5, n6, subject_attributes, object_attribu
     config['SUBJECT_ATTRIBUTES'] = {
         'count': str(n4),
         'values': ','.join(map(str, subject_attributes["values"])),
+        'stars': ','.join(map(str, subject_attributes.get("stars", [0] * len(subject_attributes["values"])))),
         'distributions': json.dumps(subject_attributes["distributions"]),
         'correlations': json.dumps(subject_attributes.get("correlations", {})),
     }
@@ -129,6 +199,7 @@ def write_config_file(n1, n2, n3, n4, n5, n6, subject_attributes, object_attribu
     config['OBJECT_ATTRIBUTES'] = {
         'count': str(n5),
         'values': ','.join(map(str, object_attributes["values"])),
+        'stars': ','.join(map(str, object_attributes.get("stars", [0] * len(object_attributes["values"])))),
         'distributions': json.dumps(object_attributes["distributions"]),
         'correlations': json.dumps(object_attributes.get("correlations", {})),
     }
@@ -137,6 +208,7 @@ def write_config_file(n1, n2, n3, n4, n5, n6, subject_attributes, object_attribu
     config['ENVIRONMENT_ATTRIBUTES'] = {
         'count': str(n6),
         'values': ','.join(map(str, environment_attributes["values"])),
+        'stars': ','.join(map(str, environment_attributes.get("stars", [0] * len(environment_attributes["values"])))),
         'distributions': json.dumps(environment_attributes["distributions"]),
         'correlations': json.dumps(environment_attributes.get("correlations", {})),
     }
@@ -182,21 +254,37 @@ if __name__ == "__main__":
     n4 = input_data["subject_attributes_count"]
     n5 = input_data["object_attributes_count"]
     n6 = input_data["environment_attributes_count"]
+
+    global_stars = int(input_data.get("global_stars", 0))
+    subject_values, subject_stars = parse_attribute_values_with_stars(
+        input_data["subject_attributes_values"], global_stars=global_stars
+    )
+    object_values, object_stars = parse_attribute_values_with_stars(
+        input_data["object_attributes_values"], global_stars=global_stars
+    )
+    environment_values, environment_stars = parse_attribute_values_with_stars(
+        input_data["environment_attributes_values"], global_stars=global_stars
+    )
+
     subject_attributes = {
-        "values": input_data["subject_attributes_values"],
+        "values": subject_values,
+        "stars": subject_stars,
         "distributions": input_data["subject_distributions"],
         "correlations": input_data.get("correlations", {}).get("subject", {}),
     }
     object_attributes = {
-        "values": input_data["object_attributes_values"],
+        "values": object_values,
+        "stars": object_stars,
         "distributions": input_data["object_distributions"],
         "correlations": input_data.get("correlations", {}).get("object", {}),
     }
     environment_attributes = {
-        "values": input_data["environment_attributes_values"],
+        "values": environment_values,
+        "stars": environment_stars,
         "distributions": input_data["environment_distributions"],
         "correlations": input_data.get("correlations", {}).get("environment", {}),
     }
+
     permit_rules = input_data.get("permit_rules_count", 0)
     deny_rules = input_data.get("deny_rules_count", 0)
     seed = input_data.get("seed")
