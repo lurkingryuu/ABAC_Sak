@@ -103,6 +103,7 @@ class JobManager:
                 'config_ini_path': None,
                 'output_dir': None,
             }
+            _persist_job_state(job_id, self.jobs[job_id])
         tracking.log_job_creation(job_id, job_type)
         return job_id
 
@@ -118,12 +119,22 @@ class JobManager:
                     self.jobs[job_id]['error'] = error
                 if progress is not None:
                     self.jobs[job_id]['progress'] = progress
+                _persist_job_state(job_id, self.jobs[job_id])
                 tracking.update_job_status(job_id, status_val, error)
 
     def get_job(self, job_id):
         """Get job status"""
         with self.lock:
-            return self.jobs.get(job_id)
+            in_memory = self.jobs.get(job_id)
+            if in_memory:
+                return in_memory
+
+        persisted = _load_persisted_job(job_id)
+        if persisted:
+            with self.lock:
+                self.jobs[job_id] = persisted
+            return persisted
+        return None
 
     def set_job_paths(self, job_id, work_dir, input_json_path, config_ini_path,
                       output_dir):
@@ -135,6 +146,7 @@ class JobManager:
                 self.jobs[job_id]['config_ini_path'] = config_ini_path
                 self.jobs[job_id]['output_dir'] = output_dir
                 self.jobs[job_id]['updated_at'] = datetime.now().isoformat()
+                _persist_job_state(job_id, self.jobs[job_id])
 
     def set_extra_data(self, job_id, **kwargs):
         """Attach arbitrary extra data to the job."""
@@ -142,6 +154,7 @@ class JobManager:
             if job_id in self.jobs:
                 self.jobs[job_id].update(kwargs)
                 self.jobs[job_id]['updated_at'] = datetime.now().isoformat()
+                _persist_job_state(job_id, self.jobs[job_id])
 
     def cleanup_old_jobs(self, max_age_hours=24):
         """Clean up jobs older than max_age_hours"""
@@ -335,6 +348,37 @@ def job_paths(job_id: str):
         'input_json_path': input_json_path,
         'config_ini_path': config_ini_path,
     }
+
+
+def _job_state_path(job_id: str) -> str:
+    """Return on-disk path for persisted job state."""
+    return os.path.join(job_paths(job_id)['work_dir'], 'job_state.json')
+
+
+def _persist_job_state(job_id: str, job_data: dict[str, Any]) -> None:
+    """Persist job status so multiple workers can read it."""
+    state_path = _job_state_path(job_id)
+    work_dir = os.path.dirname(state_path)
+    os.makedirs(work_dir, exist_ok=True)
+    tmp_path = f"{state_path}.tmp"
+    with open(tmp_path, 'w', encoding='utf-8') as f:
+        json.dump(job_data, f, ensure_ascii=True)
+    os.replace(tmp_path, state_path)
+
+
+def _load_persisted_job(job_id: str) -> dict[str, Any] | None:
+    """Load persisted job status from disk, if available."""
+    state_path = _job_state_path(job_id)
+    if not os.path.exists(state_path):
+        return None
+    try:
+        with open(state_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except (OSError, json.JSONDecodeError):
+        return None
+    return None
 
 
 ABACPositiveInt = conint(ge=1, strict=True)
