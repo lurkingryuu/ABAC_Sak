@@ -21,10 +21,19 @@ import io
 import zipfile
 import time
 from dotenv import load_dotenv
+from typing import Any, Union
+from pydantic import BaseModel, ConfigDict, ValidationError, conint, model_validator
 
 # Import handdrawn processor
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'handdrawn'))
 from handdrawn.process_zip import process_zip_file  # type: ignore
+
+# Import log generator
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'access_control'))
+from log_generator import generate_and_save_logs  # type: ignore
+
+import tracking
+tracking.init_db()
 
 try:
     load_dotenv()
@@ -38,6 +47,25 @@ signal.signal(signal.SIGPIPE, signal.SIG_DFL)
 
 
 app = Flask(__name__)
+
+@app.before_request
+def start_timer():
+    request.start_time = time.time()
+
+@app.after_request
+def log_request(response):
+    if hasattr(request, 'start_time'):
+        duration_ms = (time.time() - request.start_time) * 1000
+        # Ignore static files to reduce noise
+        if request.endpoint and request.endpoint != 'static':
+            tracking.log_api_request(
+                endpoint=request.endpoint,
+                method=request.method,
+                ip_address=request.remote_addr,
+                user_agent=request.user_agent.string if request.user_agent else '',
+                duration_ms=duration_ms
+            )
+    return response
 
 # Configure timeouts (1 hour timeout for subprocess calls / background jobs)
 PROCESS_TIMEOUT = 3600
@@ -63,7 +91,7 @@ class JobManager:
         self.jobs = {}
         self.lock = threading.Lock()
 
-    def create_job(self):
+    def create_job(self, job_type="unknown"):
         """Create a new job and return its ID"""
         job_id = str(uuid.uuid4())
         with self.lock:
@@ -79,6 +107,8 @@ class JobManager:
                 'config_ini_path': None,
                 'output_dir': None,
             }
+            _persist_job_state(job_id, self.jobs[job_id])
+        tracking.log_job_creation(job_id, job_type)
         return job_id
 
     def update_job(self, job_id, status, error=None, progress=None):
@@ -93,11 +123,22 @@ class JobManager:
                     self.jobs[job_id]['error'] = error
                 if progress is not None:
                     self.jobs[job_id]['progress'] = progress
+                _persist_job_state(job_id, self.jobs[job_id])
+                tracking.update_job_status(job_id, status_val, error)
 
     def get_job(self, job_id):
         """Get job status"""
         with self.lock:
-            return self.jobs.get(job_id)
+            in_memory = self.jobs.get(job_id)
+            if in_memory:
+                return in_memory
+
+        persisted = _load_persisted_job(job_id)
+        if persisted:
+            with self.lock:
+                self.jobs[job_id] = persisted
+            return persisted
+        return None
 
     def set_job_paths(self, job_id, work_dir, input_json_path, config_ini_path,
                       output_dir):
@@ -109,6 +150,7 @@ class JobManager:
                 self.jobs[job_id]['config_ini_path'] = config_ini_path
                 self.jobs[job_id]['output_dir'] = output_dir
                 self.jobs[job_id]['updated_at'] = datetime.now().isoformat()
+                _persist_job_state(job_id, self.jobs[job_id])
 
     def set_extra_data(self, job_id, **kwargs):
         """Attach arbitrary extra data to the job."""
@@ -116,6 +158,7 @@ class JobManager:
             if job_id in self.jobs:
                 self.jobs[job_id].update(kwargs)
                 self.jobs[job_id]['updated_at'] = datetime.now().isoformat()
+                _persist_job_state(job_id, self.jobs[job_id])
 
     def cleanup_old_jobs(self, max_age_hours=24):
         """Clean up jobs older than max_age_hours"""
@@ -140,7 +183,16 @@ def get_python_executable():
     Get the correct Python executable path.
     On PythonAnywhere/uwsgi, sys.executable points to uwsgi, not Python.
     """
-    # If sys.executable is uwsgi, find the actual Python interpreter
+    # 1. If we are in a virtual environment, prefer the python from there.
+    # sys.prefix points to the venv root.
+    if hasattr(sys, 'prefix') and hasattr(sys, 'base_prefix') and sys.prefix != sys.base_prefix:
+        # Check for bin/python (Linux/macOS) or Scripts/python.exe (Windows)
+        for sub in ['bin/python', 'bin/python3', 'Scripts/python.exe']:
+            venv_python = os.path.join(sys.prefix, sub)
+            if os.path.exists(venv_python):
+                return venv_python
+
+    # 2. If sys.executable is uwsgi (common on PythonAnywhere), find the actual Python interpreter
     if 'uwsgi' in sys.executable.lower():
         # Try to find python3 in PATH
         python_path = shutil.which('python3')
@@ -148,6 +200,8 @@ def get_python_executable():
             return python_path
         # Fallback to 'python3' command
         return 'python3'
+
+    # 3. Default to sys.executable
     return sys.executable
 
 
@@ -260,6 +314,9 @@ def _start_cleanup_thread() -> None:
                     max_age_hours=JOBS_MAX_AGE_HOURS,
                     max_total_mb=JOBS_MAX_TOTAL_MB,
                 )
+                # Keep usage database from growing forever
+                import tracking
+                tracking.cleanup_old_records(days=30)
             except Exception:
                 # Never let cleanup kill the process.
                 pass
@@ -297,6 +354,135 @@ def job_paths(job_id: str):
     }
 
 
+def _job_state_path(job_id: str) -> str:
+    """Return on-disk path for persisted job state."""
+    return os.path.join(job_paths(job_id)['work_dir'], 'job_state.json')
+
+
+def _persist_job_state(job_id: str, job_data: dict[str, Any]) -> None:
+    """Persist job status so multiple workers can read it."""
+    state_path = _job_state_path(job_id)
+    work_dir = os.path.dirname(state_path)
+    os.makedirs(work_dir, exist_ok=True)
+    tmp_path = f"{state_path}.tmp"
+    with open(tmp_path, 'w', encoding='utf-8') as f:
+        json.dump(job_data, f, ensure_ascii=True)
+    os.replace(tmp_path, state_path)
+
+
+def _load_persisted_job(job_id: str) -> dict[str, Any] | None:
+    """Load persisted job status from disk, if available."""
+    state_path = _job_state_path(job_id)
+    if not os.path.exists(state_path):
+        return None
+    try:
+        with open(state_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+    except (OSError, json.JSONDecodeError):
+        return None
+    return None
+
+
+ABACPositiveInt = conint(ge=1, strict=True)
+ABACNonNegativeInt = conint(ge=0, strict=True)
+ABACStarTuple = tuple[ABACPositiveInt, ABACNonNegativeInt]
+ABACAttributeValue = Union[ABACPositiveInt, ABACStarTuple]
+
+
+class ABACPayload(BaseModel):
+    model_config = ConfigDict(extra='allow')
+
+    subject_size: ABACPositiveInt
+    object_size: ABACPositiveInt
+    environment_size: ABACPositiveInt
+
+    subject_attributes_count: ABACPositiveInt
+    object_attributes_count: ABACPositiveInt
+    environment_attributes_count: ABACPositiveInt
+
+    permit_rules_count: ABACNonNegativeInt
+    deny_rules_count: ABACNonNegativeInt
+    global_stars: ABACNonNegativeInt | None = None
+
+    subject_attributes_values: list[ABACAttributeValue]
+    object_attributes_values: list[ABACAttributeValue]
+    environment_attributes_values: list[ABACAttributeValue]
+
+    subject_distributions: list[dict[str, Any]]
+    object_distributions: list[dict[str, Any]]
+    environment_distributions: list[dict[str, Any]]
+
+    @model_validator(mode='after')
+    def validate_lengths(self):
+        checks = [
+            ('subject_attributes_values', self.subject_attributes_values, self.subject_attributes_count, 'subject_attributes_count'),
+            ('object_attributes_values', self.object_attributes_values, self.object_attributes_count, 'object_attributes_count'),
+            ('environment_attributes_values', self.environment_attributes_values, self.environment_attributes_count, 'environment_attributes_count'),
+            ('subject_distributions', self.subject_distributions, self.subject_attributes_count, 'subject_attributes_count'),
+            ('object_distributions', self.object_distributions, self.object_attributes_count, 'object_attributes_count'),
+            ('environment_distributions', self.environment_distributions, self.environment_attributes_count, 'environment_attributes_count'),
+        ]
+        for name, values, expected, expected_name in checks:
+            if len(values) != expected:
+                raise ValueError(f"{name} length must match {expected_name}")
+        return self
+
+
+def _format_validation_error(exc: ValidationError) -> str:
+    error = exc.errors()[0]
+    location = ".".join(str(part) for part in error.get("loc", []))
+    msg = error.get("msg", "Invalid payload")
+    if error.get("type") == "missing" and location:
+        return f"Missing required fields: {location}"
+    if location:
+        return f"{location}: {msg}"
+    return str(msg)
+
+
+def validate_abac_payload(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("JSON payload must be an object")
+    try:
+        ABACPayload.model_validate(payload)
+    except ValidationError as exc:
+        raise ValueError(_format_validation_error(exc)) from None
+
+
+def _has_star_tuple(values):
+    return any(isinstance(item, list) and len(item) == 2 for item in values)
+
+
+def merge_multimodal_configs(min_config, extracted_config):
+    # Keep existing behavior by default: extracted definitions override minimal JSON.
+    final_config = {**min_config, **extracted_config}
+
+    # Preserve user star controls unless extracted config explicitly provides star-aware values.
+    star_value_keys = [
+        'subject_attributes_values',
+        'object_attributes_values',
+        'environment_attributes_values',
+    ]
+    for key in star_value_keys:
+        if key not in min_config or key not in extracted_config:
+            continue
+        min_values = min_config.get(key)
+        extracted_values = extracted_config.get(key)
+        if (
+            isinstance(min_values, list)
+            and isinstance(extracted_values, list)
+            and _has_star_tuple(min_values)
+            and not _has_star_tuple(extracted_values)
+        ):
+            final_config[key] = min_values
+
+    if 'global_stars' in min_config and 'global_stars' not in extracted_config:
+        final_config['global_stars'] = min_config['global_stars']
+
+    return final_config
+
+
 def process_file_background(job_id):
     """Process file in background thread"""
     try:
@@ -310,6 +496,15 @@ def process_file_background(job_id):
 
         if not input_json_path or not config_ini_path or not output_dir:
             raise RuntimeError("Job paths not initialized")
+
+        # Log input metrics
+        try:
+            file_size = os.path.getsize(input_json_path)
+            with open(input_json_path, 'r') as f:
+                data = json.load(f)
+            tracking.update_job_metrics(job_id, file_size_bytes=file_size, data=data)
+        except Exception as e:
+            print(f"Failed to log metrics: {e}")
 
         job_manager.update_job(job_id, JobStatus.PROCESSING, progress=25)
 
@@ -472,13 +667,21 @@ def process_multimodal_background(job_id):
         except Exception as e:
             raise RuntimeError(f"Failed to read minimal JSON: {str(e)}")
 
-        # Merge: extracted config takes precedence for attribute definitions,
-        # minimal config provides sizes/counts
-        final_config = {**min_config, **extracted_config}
+        final_config = merge_multimodal_configs(min_config, extracted_config)
+        validate_abac_payload(final_config)
         
         # Save merged input.json
         with open(input_json_path, 'w') as f:
             json.dump(final_config, f, indent=4)
+            
+        # Log metrics
+        try:
+            zip_size = os.path.getsize(zip_path)
+            json_size = os.path.getsize(min_json_path)
+            total_size = zip_size + json_size
+            tracking.update_job_metrics(job_id, file_size_bytes=total_size, data=final_config)
+        except Exception as e:
+            print(f"Failed to log metrics: {e}")
             
         job_manager.update_job(job_id, JobStatus.PROCESSING, progress=40)
 
@@ -613,11 +816,20 @@ def get_recaptcha_site_key():
     return jsonify({'site_key': RECAPTCHA_SITE_KEY}), 200
 
 
+@app.route('/schema.json', methods=['GET'])
+def get_schema_json():
+    """Return the JSON schema publicly"""
+    from flask import make_response
+    response = make_response(send_from_directory('static', 'schema.json'))
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    return response
+
+
 @app.route('/example', methods=['GET'])
 def get_example_json():
-    """Return example JSON (dataset/input5.json)"""
+    """Return example JSON (dataset/input_with_star.json)"""
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    example_path = os.path.join(base_dir, 'dataset', 'input5.json')
+    example_path = os.path.join(base_dir, 'dataset', 'input_with_star.json')
 
     try:
         with open(example_path, 'r', encoding='utf-8') as f:
@@ -664,7 +876,7 @@ def upload_file():
         )
 
         # Create background job
-        job_id = job_manager.create_job()
+        job_id = job_manager.create_job(job_type="json_upload")
         paths = job_paths(job_id)
         os.makedirs(paths['uploads_dir'], exist_ok=True)
         os.makedirs(paths['output_dir'], exist_ok=True)
@@ -726,24 +938,16 @@ def upload_json():
                 'error': 'reCAPTCHA verification failed. Please try again.'
             }), 400
 
-        # Validate JSON structure (basic validation)
-        required_fields = [
-            'subject_size', 'object_size', 'environment_size',
-            'subject_attributes_count', 'object_attributes_count',
-            'environment_attributes_count', 'rules_count'
-        ]
-        missing_fields = [
-            field for field in required_fields if field not in data
-        ]
-        if missing_fields:
-            fields_str = ', '.join(missing_fields)
+        try:
+            validate_abac_payload(data)
+        except ValueError as validation_error:
             return jsonify({
                 'success': False,
-                'error': f'Missing required fields: {fields_str}'
+                'error': str(validation_error)
             }), 400
 
         # Create background job
-        job_id = job_manager.create_job()
+        job_id = job_manager.create_job(job_type="json_editor")
         paths = job_paths(job_id)
         os.makedirs(paths['uploads_dir'], exist_ok=True)
         os.makedirs(paths['output_dir'], exist_ok=True)
@@ -818,7 +1022,7 @@ def upload_multimodal():
         )
 
         # Create job
-        job_id = job_manager.create_job()
+        job_id = job_manager.create_job(job_type="multimodal")
         paths = job_paths(job_id)
         os.makedirs(paths['uploads_dir'], exist_ok=True)
         os.makedirs(paths['output_dir'], exist_ok=True)
@@ -894,6 +1098,11 @@ def get_job_status(job_id):
                 'ACM.txt': f'/download/{job_id}?file=ACM.txt',
                 'access_data.txt': f'/download/{job_id}?file=access_data.txt',
             }
+        }
+        # Add log generation capability
+        response['log_generation'] = {
+            'available': True,
+            'endpoint': f'/generate-logs/{job_id}'
         }
     elif job['status'] == JobStatus.FAILED.value:
         response['error'] = job.get('error', 'Processing failed')
@@ -987,6 +1196,119 @@ def download_bundle(job_id):
         as_attachment=True,
         download_name='abac_outputs.zip'
     )
+
+
+@app.route('/generate-logs/<job_id>', methods=['POST'])
+def generate_logs(job_id):
+    """
+    Generate synthetic access logs based on the ACM.
+    
+    Request JSON:
+    {
+        "num_logs": 1000,
+        "allow_percentage": 75.5
+    }
+    
+    Returns: CSV file download
+    """
+    try:
+        job = job_manager.get_job(job_id)
+        
+        if not job:
+            return jsonify({
+                'success': False,
+                'error': 'Job not found'
+            }), 404
+        
+        if job.get('status') != JobStatus.COMPLETED.value:
+            return jsonify({
+                'success': False,
+                'error': 'Job is not completed yet. Logs can only be generated after processing is complete.'
+            }), 409
+        
+        # Get request parameters
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No JSON data provided'
+            }), 400
+        
+        try:
+            num_logs = int(data.get('num_logs', 1000))
+            allow_percentage = float(data.get('allow_percentage', 50.0))
+        except (ValueError, TypeError) as e:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid parameters: {str(e)}'
+            }), 400
+        
+        # Validate parameters
+        if num_logs <= 0:
+            return jsonify({
+                'success': False,
+                'error': 'num_logs must be greater than 0'
+            }), 400
+        
+        if allow_percentage < 0 or allow_percentage >= 100:
+            return jsonify({
+                'success': False,
+                'error': 'allow_percentage must be in range [0, 100)'
+            }), 400
+        
+        # Get paths from job
+        config_ini_path = job.get('config_ini_path')
+        output_dir = job.get('output_dir')
+        
+        if not config_ini_path or not output_dir:
+            return jsonify({
+                'success': False,
+                'error': 'Job paths not found'
+            }), 500
+        
+        if not os.path.exists(config_ini_path):
+            return jsonify({
+                'success': False,
+                'error': 'config.ini not found'
+            }), 500
+        
+        acm_path = os.path.join(output_dir, 'ACM.txt')
+        if not os.path.exists(acm_path):
+            return jsonify({
+                'success': False,
+                'error': 'ACM.txt not found. Please ensure the job has completed successfully.'
+            }), 500
+        
+        # Generate logs
+        logs_csv_path = os.path.join(output_dir, 'logs.csv')
+        
+        try:
+            generate_and_save_logs(
+                config_ini_path,
+                acm_path,
+                num_logs,
+                allow_percentage,
+                logs_csv_path
+            )
+        except ValueError as e:
+            return jsonify({
+                'success': False,
+                'error': f'Log generation validation error: {str(e)}'
+            }), 400
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': f'Log generation failed: {str(e)}'
+            }), 500
+        
+        # Return CSV file download
+        return send_from_directory(output_dir, 'logs.csv')
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'An unexpected error occurred: {str(e)}'
+        }), 500
 
 
 if __name__ == '__main__':
