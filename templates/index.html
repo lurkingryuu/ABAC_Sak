@@ -25,6 +25,8 @@
         <div class="tabs">
             <button class="tab-btn active" data-tab="editor">Standard Input</button>
             <button class="tab-btn" data-tab="multimodal">Multimodal Input</button>
+            <button class="tab-btn" data-tab="log-gen" id="log-gen-tab-btn" style="display: none;">Generate Logs</button>
+
         </div>
         
         <!-- Standard Input (Editor) Tab -->
@@ -126,15 +128,71 @@
             </div>
         </div>
         
-        <div id="download-container" class="download-container" style="display: none;">
-            <a href="#" id="download-bundle-link" class="btn btn-success" download>
-                <svg class="download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-                Download Outputs Bundle
-            </a>
+         <div id="download-container" class="download-container" style="display: none;">
+            <div class="download-section">
+                <h3 class="section-title">📥 Download Outputs</h3>
+                <a href="#" id="download-bundle-link" class="btn btn-success" download>
+                    <svg class="download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Download Outputs Bundle
+                </a>
+            </div>
+        </div>
+
+        <!-- Log Generator Tab -->
+        <div id="log-gen-tab" class="tab-content">
+            <div class="log-generator-container">
+                <p class="section-description">
+                    Create synthetic access logs based on the generated rules and Access Control Matrix (ACM). 
+                    Logs are available as CSV with columns: subject, object, environment, access (permit/deny).
+                </p>
+                
+                <div class="form-group">
+                    <label class="form-label" for="num-logs">Number of Logs to Generate</label>
+                    <input 
+                        type="number" 
+                        id="num-logs" 
+                        name="num_logs" 
+                        value="1000"
+                        min="1"
+                        max="1000000"
+                        class="form-input"
+                        placeholder="e.g., 1000"
+                        disabled
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="allow-percentage">Allow Percentage (%)</label>
+                    <input 
+                        type="number" 
+                        id="allow-percentage" 
+                        name="allow_percentage" 
+                        value="50"
+                        min="0"
+                        max="99.9"
+                        step="0.1"
+                        class="form-input"
+                        placeholder="e.g., 50"
+                        disabled
+                    >
+                </div>
+
+                <div class="form-group">
+                    <button id="generate-logs-btn" class="btn btn-primary" disabled>
+                        <span class="btn-text">Generate Logs (CSV)</span>
+                        <span class="btn-loader" style="display: none;">
+                            <span class="spinner"></span>
+                            Generating...
+                        </span>
+                    </button>
+                </div>
+
+                <div id="log-generator-message" class="log-gen-message" style="display: none;"></div>
+            </div>
         </div>
     </div>
 
@@ -160,9 +218,10 @@
                         <div class="schema-section-title">Required top-level fields</div>
                         <ul class="schema-list">
                             <li><code>subject_size</code>, <code>object_size</code>, <code>environment_size</code> (number)</li>
-                            <li><code>rules_count</code> (number)</li>
+                            <li><code>permit_rules_count</code>, <code>deny_rules_count</code> (number)</li>
                             <li><code>subject_attributes_count</code>, <code>object_attributes_count</code>, <code>environment_attributes_count</code> (number)</li>
-                            <li><code>subject_attributes_values</code>, <code>object_attributes_values</code>, <code>environment_attributes_values</code> (array of numbers)</li>
+                            <li><code>subject_attributes_values</code>, <code>object_attributes_values</code>, <code>environment_attributes_values</code> (array of numbers or <code>[count, stars]</code> pairs)</li>
+                            <li><code>global_stars</code> (optional number, used as default for numeric entries)</li>
                             <li><code>subject_distributions</code>, <code>object_distributions</code>, <code>environment_distributions</code> (array of objects)</li>
                         </ul>
         </div>
@@ -170,9 +229,16 @@
                     <div class="schema-section">
                         <div class="schema-section-title">Distributions format</div>
                         <div class="schema-note">
-                            Each item supports a <code>distribution</code> code like <code>"N"</code> (Normal),
+                            Each distribution item supports a <code>distribution</code> code like <code>"N"</code> (Normal),
                             <code>"P"</code> (Poisson), <code>"U"</code> (Uniform). Some distributions may include
                             parameters like <code>mean</code>/<code>variance</code> or <code>lambda</code>.
+                        </div>
+                    </div>
+                    <div class="schema-section">
+                        <div class="schema-section-title">Star format</div>
+                        <div class="schema-note">
+                            In attribute value arrays, use either a single number like <code>5</code> or
+                            a pair like <code>[5, 2]</code> where the second value is the wildcard star count.
                         </div>
                     </div>
     
@@ -348,6 +414,13 @@
             }
             
             require(['vs/editor/editor.main'], function () {
+                // Enable schema request for external $schema references
+                monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+                    validate: true,
+                    allowComments: false,
+                    enableSchemaRequest: true
+                });
+
                 if (editorContainer) {
                 monacoEditor = monaco.editor.create(editorContainer, {
                     value: '',
@@ -587,6 +660,10 @@
             hideJsonError();
             downloadContainer.style.display = 'none';
             submitJsonBtn.disabled = true;
+            uploadJsonBtn.disabled = true;
+            editorFileUpload.disabled = true;
+            loadExampleBtn.disabled = true;
+            viewSchemaBtn.disabled = true;
             submitJsonBtnText.style.display = 'none';
             submitJsonBtnLoader.style.display = 'flex';
             progressContainer.style.display = 'block';
@@ -627,6 +704,7 @@
                     const errorMsg = uploadData.error || uploadData.message || 'Failed to upload JSON';
                     showMessage(errorMsg, 'error');
                     resetProgressSteps();
+                    enableInputControls();
                     submitJsonBtn.disabled = false;
                     submitJsonBtnText.style.display = 'inline';
                     submitJsonBtnLoader.style.display = 'none';
@@ -663,6 +741,7 @@
                 
                 showMessage(errorMessage, 'error');
                 resetProgressSteps();
+                enableInputControls();
                 // Reset reCAPTCHA on error
                 if (typeof grecaptcha !== 'undefined') {
                     const widgetId = recaptchaWidgetIds.json;
@@ -743,6 +822,10 @@
                             if (bundleLink) {
                                 bundleLink.href = `/download/${jobId}/bundle.zip`;
                                 downloadContainer.style.display = 'block';
+
+                                // Ensure log generator section is visible and enabled
+                                currentJobId = jobId;
+                                enableLogGenerator(jobId);
                             } else {
                                 downloadContainer.style.display = 'none';
                             }
@@ -819,10 +902,12 @@
             minJsonLoadExampleBtn.addEventListener('click', () => {
                 if (minMonacoEditor) {
                     const minimalExample = {
-                        "subject_size": 200,
-                        "object_size": 150,
-                        "environment_size": 50,
-                        "rules_count": 30
+                        "$schema": "https://abacsim.pythonanywhere.com/schema.json",
+                        "subject_size": 20,
+                        "object_size": 15,
+                        "environment_size": 5,
+                        "permit_rules_count": 5,
+                        "deny_rules_count": 3
                     };
                     minMonacoEditor.setValue(JSON.stringify(minimalExample, null, 4));
                     hideMinJsonError();
@@ -970,8 +1055,14 @@
                 const btn = document.getElementById('submit-multimodal-btn');
                 const btnText = btn.querySelector('.btn-text');
                 const btnLoader = btn.querySelector('.btn-loader');
+                const minJsonUploadBtn = document.getElementById('min-json-upload-btn');
+                const minJsonLoadExampleBtn = document.getElementById('min-json-load-example-btn');
+                
                 
                 btn.disabled = true;
+                minJsonUploadBtn.disabled = true;
+                minJsonLoadExampleBtn.disabled = true;
+                zipInput.disabled = true;
                 btnText.style.display = 'none';
                 btnLoader.style.display = 'flex';
                 progressContainer.style.display = 'block';
@@ -1011,15 +1102,152 @@
                 } catch (error) {
                     showMessage(error.message || 'An error occurred', 'error');
                     resetProgressSteps();
+                    enableInputControls();
                     if (typeof grecaptcha !== 'undefined' && recaptchaWidgetIds.multimodal !== null) {
                         grecaptcha.reset(recaptchaWidgetIds.multimodal);
                     }
                 } finally {
                     btn.disabled = false;
+                    minJsonUploadBtn.disabled = false;
+                    minJsonLoadExampleBtn.disabled = false;
+                    zipInput.disabled = false;
                     btnText.style.display = 'inline';
                     btnLoader.style.display = 'none';
                 }
             });
+        }
+
+
+        // Log Generator Section
+        const generateLogsBtn = document.getElementById('generate-logs-btn');
+        const numLogsInput = document.getElementById('num-logs');
+        const allowPercentageInput = document.getElementById('allow-percentage');
+        const logGeneratorMessage = document.getElementById('log-generator-message');
+        const logGenTabBtn = document.getElementById('log-gen-tab-btn');
+        let currentJobId = null;
+
+        // Initialize log generator as disabled
+        function disableLogGenerator() {
+            if (generateLogsBtn) generateLogsBtn.disabled = true;
+            if (numLogsInput) numLogsInput.disabled = true;
+            if (allowPercentageInput) allowPercentageInput.disabled = true;
+        }
+
+        function enableLogGenerator(jobId) {
+            if (generateLogsBtn) generateLogsBtn.disabled = false;
+            if (numLogsInput) numLogsInput.disabled = false;
+            if (allowPercentageInput) allowPercentageInput.disabled = false;
+            if (logGenTabBtn) logGenTabBtn.style.display = 'inline-block';
+        }
+
+        // Disable on load
+        disableLogGenerator();
+
+        // Also re-enable input controls after generation completes
+        function enableInputControls() {
+            submitJsonBtn.disabled = false;
+            uploadJsonBtn.disabled = false;
+            editorFileUpload.disabled = false;
+            loadExampleBtn.disabled = false;
+            viewSchemaBtn.disabled = false;
+        }
+
+        // Track current job ID from download links
+        const downloadBundleLink = document.getElementById('download-bundle-link');
+        if (downloadBundleLink) {
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    if (mutation.type === 'attributes' && mutation.attributeName === 'href') {
+                        const href = downloadBundleLink.getAttribute('href');
+                        if (href && href.includes('/download/')) {
+                            currentJobId = href.match(/\/download\/([^/]+)/)?.[1];
+                            enableLogGenerator(currentJobId);
+                        }
+                    }
+                });
+            });
+            observer.observe(downloadBundleLink, { attributes: true });
+        }
+
+        generateLogsBtn.addEventListener('click', async () => {
+            if (!currentJobId) {
+                showLogMessage('Job ID not found. Please process data first.', 'error');
+                return;
+            }
+
+            const numLogs = parseInt(numLogsInput.value);
+            const allowPercentage = parseFloat(allowPercentageInput.value);
+
+            // Validate inputs
+            if (isNaN(numLogs) || numLogs <= 0) {
+                showLogMessage('Number of logs must be a positive integer', 'error');
+                return;
+            }
+
+            if (isNaN(allowPercentage) || allowPercentage < 0 || allowPercentage >= 100) {
+                showLogMessage('Allow percentage must be between 0 and 99.9', 'error');
+                return;
+            }
+
+            // Disable button and show loading state
+            generateLogsBtn.disabled = true;
+            const btnText = generateLogsBtn.querySelector('.btn-text');
+            const btnLoader = generateLogsBtn.querySelector('.btn-loader');
+            btnText.style.display = 'none';
+            btnLoader.style.display = 'flex';
+
+            try {
+                showLogMessage(`Generating ${numLogs} logs with ${allowPercentage}% permit rate...`, 'success');
+
+                const response = await fetch(`/generate-logs/${currentJobId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        num_logs: numLogs,
+                        allow_percentage: allowPercentage
+                    })
+                });
+
+                if (!response.ok) {
+                    let errorMsg = 'Failed to generate logs';
+                    try {
+                        const errorData = await response.json();
+                        errorMsg = errorData.error || errorMsg;
+                    } catch (e) {
+                        errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+                    }
+                    showLogMessage(errorMsg, 'error');
+                    return;
+                }
+
+                // Download the CSV file
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'logs.csv';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+
+                showLogMessage('✓ Logs generated and downloaded successfully!', 'success');
+
+            } catch (error) {
+                showLogMessage('Error: ' + error.message, 'error');
+            } finally {
+                generateLogsBtn.disabled = false;
+                btnText.style.display = 'inline';
+                btnLoader.style.display = 'none';
+            }
+        });
+
+        function showLogMessage(message, type) {
+            logGeneratorMessage.textContent = message;
+            logGeneratorMessage.className = `log-gen-message message-${type}`;
+            logGeneratorMessage.style.display = 'block';
         }
     </script>
 </body>
