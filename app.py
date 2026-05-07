@@ -28,6 +28,10 @@ from pydantic import BaseModel, ConfigDict, ValidationError, conint, model_valid
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'handdrawn'))
 from handdrawn.process_zip import process_zip_file  # type: ignore
 
+# Import log generator
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'access_control'))
+from log_generator import generate_and_save_logs  # type: ignore
+
 import tracking
 tracking.init_db()
 
@@ -1095,6 +1099,11 @@ def get_job_status(job_id):
                 'access_data.txt': f'/download/{job_id}?file=access_data.txt',
             }
         }
+        # Add log generation capability
+        response['log_generation'] = {
+            'available': True,
+            'endpoint': f'/generate-logs/{job_id}'
+        }
     elif job['status'] == JobStatus.FAILED.value:
         response['error'] = job.get('error', 'Processing failed')
     elif job['status'] in [JobStatus.PROCESSING.value,
@@ -1187,6 +1196,119 @@ def download_bundle(job_id):
         as_attachment=True,
         download_name='abac_outputs.zip'
     )
+
+
+@app.route('/generate-logs/<job_id>', methods=['POST'])
+def generate_logs(job_id):
+    """
+    Generate synthetic access logs based on the ACM.
+    
+    Request JSON:
+    {
+        "num_logs": 1000,
+        "allow_percentage": 75.5
+    }
+    
+    Returns: CSV file download
+    """
+    try:
+        job = job_manager.get_job(job_id)
+        
+        if not job:
+            return jsonify({
+                'success': False,
+                'error': 'Job not found'
+            }), 404
+        
+        if job.get('status') != JobStatus.COMPLETED.value:
+            return jsonify({
+                'success': False,
+                'error': 'Job is not completed yet. Logs can only be generated after processing is complete.'
+            }), 409
+        
+        # Get request parameters
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No JSON data provided'
+            }), 400
+        
+        try:
+            num_logs = int(data.get('num_logs', 1000))
+            allow_percentage = float(data.get('allow_percentage', 50.0))
+        except (ValueError, TypeError) as e:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid parameters: {str(e)}'
+            }), 400
+        
+        # Validate parameters
+        if num_logs <= 0:
+            return jsonify({
+                'success': False,
+                'error': 'num_logs must be greater than 0'
+            }), 400
+        
+        if allow_percentage < 0 or allow_percentage >= 100:
+            return jsonify({
+                'success': False,
+                'error': 'allow_percentage must be in range [0, 100)'
+            }), 400
+        
+        # Get paths from job
+        config_ini_path = job.get('config_ini_path')
+        output_dir = job.get('output_dir')
+        
+        if not config_ini_path or not output_dir:
+            return jsonify({
+                'success': False,
+                'error': 'Job paths not found'
+            }), 500
+        
+        if not os.path.exists(config_ini_path):
+            return jsonify({
+                'success': False,
+                'error': 'config.ini not found'
+            }), 500
+        
+        acm_path = os.path.join(output_dir, 'ACM.txt')
+        if not os.path.exists(acm_path):
+            return jsonify({
+                'success': False,
+                'error': 'ACM.txt not found. Please ensure the job has completed successfully.'
+            }), 500
+        
+        # Generate logs
+        logs_csv_path = os.path.join(output_dir, 'logs.csv')
+        
+        try:
+            generate_and_save_logs(
+                config_ini_path,
+                acm_path,
+                num_logs,
+                allow_percentage,
+                logs_csv_path
+            )
+        except ValueError as e:
+            return jsonify({
+                'success': False,
+                'error': f'Log generation validation error: {str(e)}'
+            }), 400
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': f'Log generation failed: {str(e)}'
+            }), 500
+        
+        # Return CSV file download
+        return send_from_directory(output_dir, 'logs.csv')
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': f'An unexpected error occurred: {str(e)}'
+        }), 500
 
 
 if __name__ == '__main__':
