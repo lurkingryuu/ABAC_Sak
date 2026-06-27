@@ -25,8 +25,8 @@
         <div class="tabs">
             <button class="tab-btn active" data-tab="editor">Standard Input</button>
             <button class="tab-btn" data-tab="multimodal">Multimodal Input</button>
-            <button class="tab-btn" data-tab="log-gen" id="log-gen-tab-btn" style="display: none;">Generate Logs</button>
-
+            <button class="tab-btn" data-tab="log-gen" id="log-gen-tab-btn" disabled title="Available after a simulation completes">Generate Logs</button>
+            <button class="tab-btn tab-btn-help" data-tab="help">Help &amp; Guide</button>
         </div>
         
         <!-- Standard Input (Editor) Tab -->
@@ -38,6 +38,12 @@
                     <button type="button" id="load-example-btn" class="btn btn-secondary">Load Example</button>
                     <button type="button" id="view-schema-btn" class="btn btn-secondary">View Schema</button>
                 </div>
+                <p class="form-hint editor-hint">
+                    Required fields: <code>subject_size</code>, <code>object_size</code>,
+                    <code>environment_size</code>, <code>permit_rules_count</code>, <code>deny_rules_count</code>.
+                    Attribute value arrays accept a plain number or a <code>[count, stars]</code> pair.
+                    New here? <a href="#" class="hint-link" data-goto-tab="help">See Help &amp; Guide</a>.
+                </p>
                 <div id="json-editor" class="json-editor-container"></div>
                 <div class="editor-footer">
                     <div id="json-error" class="json-error" style="display: none;"></div>
@@ -60,11 +66,19 @@
         <div id="multimodal-tab" class="tab-content">
             <form id="multimodal-form" action="/upload-multimodal" method="post" enctype="multipart/form-data">
                 <p class="section-description">
-                    Upload a ZIP file containing hand-drawn distribution images and a minimal JSON configuration.
+                    Sketch each attribute's value distribution by hand, then let MuSimA read the curves and build
+                    the full configuration for you. Provide a ZIP of the sketches plus a minimal JSON config.
+                    <a href="#" class="hint-link" data-goto-tab="help">See Help &amp; Guide</a>.
                 </p>
 
                 <div class="form-group">
                     <label class="form-label">1. Configuration (Minimal JSON)</label>
+                    <p class="form-hint">
+                        Only the five required fields are needed: <code>subject_size</code>,
+                        <code>object_size</code>, <code>environment_size</code>, <code>permit_rules_count</code>,
+                        <code>deny_rules_count</code>. Attribute counts, values, and distributions are inferred
+                        from your sketches. Use <strong>Load Example</strong> for a starting point.
+                    </p>
                     <div class="editor-wrapper">
                         <div class="editor-header">
                             <input type="file" id="min-json-file-upload" accept=".json" style="display: none;">
@@ -80,6 +94,12 @@
 
                 <div class="form-group">
                     <label class="form-label">2. Distribution Images (ZIP)</label>
+                    <p class="form-hint">
+                        One <strong>PNG</strong> or <strong>JPG</strong> sketch per attribute, named by type and
+                        index: <code>SA-1</code>, <code>SA-2</code>, … (subjects), <code>OA-1</code>, … (objects),
+                        <code>EA-1</code>, … (environment). Draw each curve clearly — a peaked hump (Normal),
+                        a right-skewed shape (Poisson), or a flat line (Uniform).
+                    </p>
                     <div class="file-input-wrapper" id="zip-wrapper">
                         <label for="zip-input" class="file-label">
                             <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -139,6 +159,19 @@
                     </svg>
                     Download Outputs Bundle
                 </a>
+                <ul class="output-legend">
+                    <li><code>output.json</code> — full ABAC system: subjects/objects/environments (S/O/E),
+                        their attributes &amp; values, per-entity assignments, and the generated policy rules.</li>
+                    <li><code>ACM.txt</code> — Access Control Matrix as 0/1 over Subjects × Objects × Environments
+                        (1 = allowed).</li>
+                    <li><code>access_data.txt</code> — flattened access records (attribute columns + decision),
+                        ready for ML.</li>
+                    <li><code>distribution_attestations/plots/</code> — expected vs. actual attribute
+                        distributions.</li>
+                    <li><code>distribution_attestations/comparisons/</code> — sketch vs. realized plots
+                        (multimodal runs only).</li>
+                    <li><code>README.txt</code> — this same reference, included in the bundle.</li>
+                </ul>
             </div>
         </div>
 
@@ -146,12 +179,18 @@
         <div id="log-gen-tab" class="tab-content">
             <div class="log-generator-container">
                 <p class="section-description">
-                    Create synthetic access logs based on the generated rules and Access Control Matrix (ACM). 
-                    Logs are available as CSV with columns: subject, object, environment, access (permit/deny).
+                    Create synthetic access logs by sampling the completed simulation's Access Control Matrix (ACM).
+                    Logs download as CSV with columns: subject, object, environment, access (permit/deny).
                 </p>
-                
+
+                <div id="log-gen-empty-state" class="empty-state">
+                    Run a simulation first (Standard or Multimodal Input). Once it completes, log generation
+                    unlocks here automatically.
+                </div>
+
                 <div class="form-group">
                     <label class="form-label" for="num-logs">Number of Logs to Generate</label>
+                    <p class="form-hint">How many access records to sample. Range: 1 to 1,000,000.</p>
                     <input 
                         type="number" 
                         id="num-logs" 
@@ -167,7 +206,8 @@
 
                 <div class="form-group">
                     <label class="form-label" for="allow-percentage">Allow Percentage (%)</label>
-                    <input 
+                    <p class="form-hint">Share of generated rows that should be permit (allow). Range: 0 to 99.9.</p>
+                    <input
                         type="number" 
                         id="allow-percentage" 
                         name="allow_percentage" 
@@ -194,13 +234,123 @@
                 <div id="log-generator-message" class="log-gen-message" style="display: none;"></div>
             </div>
         </div>
+
+        <!-- Help & Guide Tab -->
+        <div id="help-tab" class="tab-content">
+            <div class="help-content">
+                <p class="section-description">
+                    MuSimA generates synthetic <strong>ABAC</strong> datasets — subjects, objects, environments,
+                    their attributes, a set of permit/deny policy rules, and the resulting Access Control Matrix —
+                    plus optional synthetic access logs. Pick a workflow below.
+                </p>
+
+                <details open>
+                    <summary>Workflow A — Standard Input (JSON)</summary>
+                    <div class="help-body">
+                        <ol>
+                            <li>Open the <strong>Standard Input</strong> tab and click <strong>Load Example</strong>
+                                (or <strong>Upload JSON</strong>) to start from a valid config.</li>
+                            <li>Edit the JSON in the editor. Use <strong>View Schema</strong> for the field reference.</li>
+                            <li>Complete the reCAPTCHA and click <strong>Generate Simulation</strong>.</li>
+                            <li>When processing finishes, use <strong>Download Outputs Bundle</strong>.</li>
+                        </ol>
+                    </div>
+                </details>
+
+                <details>
+                    <summary>Workflow B — Multimodal Input (hand-drawn sketches)</summary>
+                    <div class="help-body">
+                        <ol>
+                            <li>Sketch one distribution per attribute and save each as a PNG/JPG named
+                                <code>SA-1</code>, <code>SA-2</code>, … (subjects), <code>OA-1</code>, … (objects),
+                                <code>EA-1</code>, … (environment). Zip them together.</li>
+                            <li>In the <strong>Multimodal Input</strong> tab, provide a minimal JSON config — only the
+                                five required fields below — and select your ZIP.</li>
+                            <li>Click <strong>Process Multimodal Input</strong>. MuSimA reads the sketches, infers the
+                                attribute counts/values/distributions, then runs the standard pipeline.</li>
+                            <li>The bundle additionally includes side-by-side sketch-vs-realized comparison images.</li>
+                        </ol>
+                    </div>
+                </details>
+
+                <details>
+                    <summary>Input field reference</summary>
+                    <div class="help-body">
+                        <table class="help-table">
+                            <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+                            <tbody>
+                                <tr><td><code>subject_size</code>, <code>object_size</code>,
+                                    <code>environment_size</code></td>
+                                    <td><strong>Required.</strong> Number of distinct subjects / objects /
+                                    environments.</td></tr>
+                                <tr><td><code>permit_rules_count</code>, <code>deny_rules_count</code></td>
+                                    <td><strong>Required.</strong> How many access-granting (permit) and
+                                    access-blocking (deny) policy rules to generate.</td></tr>
+                                <tr><td><code>subject_attributes_count</code> (and object/environment)</td>
+                                    <td>Number of attributes per entity type.</td></tr>
+                                <tr><td><code>subject_attributes_values</code> (and object/environment)</td>
+                                    <td>One entry per attribute: a number = how many possible values, or a
+                                    <code>[count, stars]</code> pair to also add wildcards.</td></tr>
+                                <tr><td><code>global_stars</code></td>
+                                    <td>Default wildcard count applied to plain-number attribute entries.</td></tr>
+                                <tr><td><code>subject_distributions</code> (and object/environment)</td>
+                                    <td>One entry per attribute: <code>"N"</code> Normal (<code>mean</code>,
+                                    <code>variance</code>), <code>"P"</code> Poisson (<code>lambda</code>), or
+                                    <code>"U"</code> Uniform.</td></tr>
+                                <tr><td><code>seed</code>, <code>sampling_config</code>, <code>correlations</code></td>
+                                    <td>Optional / advanced: reproducibility, calibration tolerances, and
+                                    attribute correlation targets.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+
+                <details>
+                    <summary>Wildcard stars — the <code>[count, stars]</code> format</summary>
+                    <div class="help-body">
+                        <p>In any attribute-values array, an entry can be a plain number (<code>5</code> = five
+                        concrete values) or a pair (<code>[5, 2]</code> = five values plus two wildcard
+                        <code>*</code> slots). Wildcards make a rule match any value for that attribute, so a higher
+                        star count yields broader, less specific rules. <code>[4, 0]</code> disables wildcards for
+                        that attribute.</p>
+                    </div>
+                </details>
+
+                <details>
+                    <summary>Understanding the output bundle</summary>
+                    <div class="help-body">
+                        <ul class="output-legend">
+                            <li><code>output.json</code> — full ABAC system: S/O/E identifiers, attribute names &amp;
+                                possible values, per-entity assignments, and the generated rules.</li>
+                            <li><code>ACM.txt</code> — Access Control Matrix as 0/1 over
+                                Subjects × Objects × Environments (1 = allowed).</li>
+                            <li><code>access_data.txt</code> — flattened access records (attribute columns +
+                                decision), ready for ML.</li>
+                            <li><code>distribution_attestations/plots/</code> — expected vs. actual attribute
+                                distributions.</li>
+                            <li><code>distribution_attestations/comparisons/</code> — sketch vs. realized plots
+                                (multimodal runs only).</li>
+                        </ul>
+                    </div>
+                </details>
+
+                <details>
+                    <summary>Generating access logs</summary>
+                    <div class="help-body">
+                        <p>After a simulation completes, the <strong>Generate Logs</strong> tab unlocks. Choose how
+                        many records to sample and the percentage that should be permit, then download the result as
+                        CSV. Logs are sampled from the completed run's Access Control Matrix.</p>
+                    </div>
+                </details>
+            </div>
+        </div>
     </div>
 
     <!-- Schema Modal -->
     <div id="schema-modal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 class="schema-title" style="margin: 0;">JSON Schema / Format</h2>
+                <h2 class="schema-title" style="margin: 0;">JSON Schema / Format <span class="esc-hint">(press Esc to close)</span></h2>
                 <button class="close-modal" id="close-schema-modal">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -217,28 +367,45 @@
                     <div class="schema-section">
                         <div class="schema-section-title">Required top-level fields</div>
                         <ul class="schema-list">
-                            <li><code>subject_size</code>, <code>object_size</code>, <code>environment_size</code> (number)</li>
-                            <li><code>permit_rules_count</code>, <code>deny_rules_count</code> (number)</li>
-                            <li><code>subject_attributes_count</code>, <code>object_attributes_count</code>, <code>environment_attributes_count</code> (number)</li>
-                            <li><code>subject_attributes_values</code>, <code>object_attributes_values</code>, <code>environment_attributes_values</code> (array of numbers or <code>[count, stars]</code> pairs)</li>
-                            <li><code>global_stars</code> (optional number, used as default for numeric entries)</li>
-                            <li><code>subject_distributions</code>, <code>object_distributions</code>, <code>environment_distributions</code> (array of objects)</li>
+                            <li><code>subject_size</code>, <code>object_size</code>, <code>environment_size</code> (number) — how many distinct subjects / objects / environments exist.</li>
+                            <li><code>permit_rules_count</code>, <code>deny_rules_count</code> (number) — how many access-granting and access-blocking policy rules to generate.</li>
                         </ul>
         </div>
 
                     <div class="schema-section">
+                        <div class="schema-section-title">Attribute fields (per entity type)</div>
+                        <ul class="schema-list">
+                            <li><code>subject_attributes_count</code> / <code>object_…</code> / <code>environment_…</code> (number) — how many attributes that entity type has.</li>
+                            <li><code>subject_attributes_values</code> / … (array, one entry per attribute) — a number = count of possible values, or a <code>[count, stars]</code> pair to also add wildcards.</li>
+                            <li><code>global_stars</code> (optional number) — default wildcard count applied to plain-number entries.</li>
+                            <li><code>subject_distributions</code> / … (array, one entry per attribute) — see below.</li>
+                        </ul>
+                    </div>
+
+                    <div class="schema-section">
                         <div class="schema-section-title">Distributions format</div>
                         <div class="schema-note">
-                            Each distribution item supports a <code>distribution</code> code like <code>"N"</code> (Normal),
-                            <code>"P"</code> (Poisson), <code>"U"</code> (Uniform). Some distributions may include
-                            parameters like <code>mean</code>/<code>variance</code> or <code>lambda</code>.
+                            Each entry has a <code>distribution</code> code: <code>"N"</code> Normal
+                            (optional <code>mean</code>, <code>variance</code>), <code>"P"</code> Poisson
+                            (optional <code>lambda</code>), or <code>"U"</code> Uniform (no parameters). This
+                            controls how often each attribute value is assigned across entities.
                         </div>
                     </div>
                     <div class="schema-section">
-                        <div class="schema-section-title">Star format</div>
+                        <div class="schema-section-title">Star (wildcard) format</div>
                         <div class="schema-note">
-                            In attribute value arrays, use either a single number like <code>5</code> or
-                            a pair like <code>[5, 2]</code> where the second value is the wildcard star count.
+                            In attribute value arrays, use a single number like <code>5</code> (five concrete
+                            values) or a pair like <code>[5, 2]</code> where the second value is the wildcard star
+                            count. Wildcards (<code>*</code>) let a rule match any value for that attribute, so more
+                            stars produce broader, less specific rules.
+                        </div>
+                    </div>
+                    <div class="schema-section">
+                        <div class="schema-section-title">Optional / advanced</div>
+                        <div class="schema-note">
+                            <code>seed</code> (reproducible runs), <code>sampling_config</code> (calibration
+                            tolerances), and <code>correlations</code> (target relationships between attributes)
+                            are all optional.
                         </div>
                     </div>
     
@@ -396,6 +563,19 @@
                 
                 // Hide message when switching tabs
                 hideMessage();
+            });
+        });
+
+        // Inline "See Help" / cross-tab links
+        document.querySelectorAll('.hint-link[data-goto-tab]').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const target = link.getAttribute('data-goto-tab');
+                const btn = document.querySelector(`.tab-btn[data-tab="${target}"]`);
+                if (btn && !btn.disabled) {
+                    btn.click();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
             });
         });
         
@@ -598,6 +778,12 @@
         closeSchemaModal.addEventListener('click', closeModal);
         schemaModal.addEventListener('click', (e) => {
             if (e.target === schemaModal) {
+                closeModal();
+            }
+        });
+        // Close schema modal on Escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && schemaModal.classList.contains('show')) {
                 closeModal();
             }
         });
@@ -833,7 +1019,7 @@
                         } else if (status === 'failed') {
                             clearInterval(pollInterval);
                             const errorMsg = data.error || 'Processing failed';
-                            showMessage(errorMsg, 'error');
+                            showMessage(friendlyError(errorMsg), 'error');
                             resetProgressSteps();
                             reject(new Error(errorMsg));
                         }
@@ -862,6 +1048,20 @@
         
         function hideMessage() {
             messageContainer.style.display = 'none';
+        }
+
+        // Map raw backend errors to friendly, actionable copy
+        function friendlyError(message) {
+            const raw = (typeof message === 'string')
+                ? message
+                : (message && (message.error || message.message)) || String(message || '');
+            if (/GEMINI_API_KEY/i.test(raw)) {
+                return "Multimodal processing isn't configured on this server. Use Standard Input, or contact the administrator.";
+            }
+            if (/pipeline failed|unexpected error|processing failed/i.test(raw)) {
+                return raw + ' — check your input against the schema (View Schema or the Help & Guide tab).';
+            }
+            return raw;
         }
         
         function resetProgressSteps() {
@@ -1100,7 +1300,7 @@
                     await pollJobStatus(jobId);
 
                 } catch (error) {
-                    showMessage(error.message || 'An error occurred', 'error');
+                    showMessage(friendlyError(error.message || 'An error occurred'), 'error');
                     resetProgressSteps();
                     enableInputControls();
                     if (typeof grecaptcha !== 'undefined' && recaptchaWidgetIds.multimodal !== null) {
@@ -1126,18 +1326,29 @@
         const logGenTabBtn = document.getElementById('log-gen-tab-btn');
         let currentJobId = null;
 
+        const logGenEmptyState = document.getElementById('log-gen-empty-state');
+
         // Initialize log generator as disabled
         function disableLogGenerator() {
             if (generateLogsBtn) generateLogsBtn.disabled = true;
             if (numLogsInput) numLogsInput.disabled = true;
             if (allowPercentageInput) allowPercentageInput.disabled = true;
+            if (logGenTabBtn) {
+                logGenTabBtn.disabled = true;
+                logGenTabBtn.title = 'Available after a simulation completes';
+            }
+            if (logGenEmptyState) logGenEmptyState.style.display = 'block';
         }
 
         function enableLogGenerator(jobId) {
             if (generateLogsBtn) generateLogsBtn.disabled = false;
             if (numLogsInput) numLogsInput.disabled = false;
             if (allowPercentageInput) allowPercentageInput.disabled = false;
-            if (logGenTabBtn) logGenTabBtn.style.display = 'inline-block';
+            if (logGenTabBtn) {
+                logGenTabBtn.disabled = false;
+                logGenTabBtn.removeAttribute('title');
+            }
+            if (logGenEmptyState) logGenEmptyState.style.display = 'none';
         }
 
         // Disable on load

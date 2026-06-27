@@ -383,6 +383,21 @@ h1 {
     border-bottom-color: #667eea;
 }
 
+.tab-btn:disabled {
+    color: #bbb;
+    cursor: not-allowed;
+}
+
+.tab-btn:disabled:hover {
+    color: #bbb;
+    background-color: transparent;
+}
+
+/* Help tab sits visually apart on the right */
+.tab-btn-help {
+    flex: 0 0 auto;
+}
+
 .tab-content {
     display: none;
     /* Allow tab content to scroll without growing the outer card */
@@ -962,4 +977,192 @@ input[type="number"].form-input {
         left: 24px;
         right: 24px;
     }
+}
+
+/* ===== Guidance layer ===== */
+
+/* Inline field hints */
+.form-hint {
+    color: #6b7280;
+    font-size: 12.5px;
+    line-height: 1.5;
+    margin: 6px 0 0;
+    text-align: left;
+}
+
+.form-hint code {
+    background: #f3f4f6;
+    color: #4b5563;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.editor-hint {
+    margin: 10px 0 12px;
+}
+
+.hint-link {
+    color: #667eea;
+    text-decoration: none;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.hint-link:hover {
+    text-decoration: underline;
+}
+
+/* Empty state (e.g. log generator before a run) */
+.empty-state {
+    background: #f8f9ff;
+    border: 1px dashed #c7ccf5;
+    color: #555;
+    border-radius: 10px;
+    padding: 16px 18px;
+    font-size: 14px;
+    line-height: 1.5;
+    text-align: left;
+    margin-bottom: 20px;
+}
+
+/* Output bundle legend */
+.output-legend {
+    list-style: none;
+    margin: 16px 0 0;
+    padding: 0;
+    text-align: left;
+}
+
+.output-legend li {
+    font-size: 13px;
+    color: #555;
+    line-height: 1.5;
+    padding: 6px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.output-legend li:last-child {
+    border-bottom: none;
+}
+
+.output-legend code {
+    background: #f3f4f6;
+    color: #4b5563;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 12.5px;
+}
+
+/* Help & Guide tab */
+.help-content {
+    text-align: left;
+}
+
+.help-content details {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    background: #fff;
+    overflow: hidden;
+}
+
+.help-content details[open] {
+    border-color: #c7ccf5;
+}
+
+.help-content summary {
+    cursor: pointer;
+    padding: 14px 18px;
+    font-weight: 600;
+    color: #333;
+    font-size: 15px;
+    list-style: none;
+    user-select: none;
+    background: #f8f9ff;
+}
+
+.help-content summary::-webkit-details-marker {
+    display: none;
+}
+
+.help-content summary::before {
+    content: '▸';
+    display: inline-block;
+    margin-right: 10px;
+    color: #667eea;
+    transition: transform 0.2s ease;
+}
+
+.help-content details[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+.help-content summary code {
+    background: #eef0ff;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.help-body {
+    padding: 4px 18px 16px;
+    color: #555;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+.help-body ol,
+.help-body ul {
+    margin: 8px 0;
+    padding-left: 22px;
+}
+
+.help-body li {
+    margin-bottom: 6px;
+}
+
+.help-body code {
+    background: #f3f4f6;
+    color: #4b5563;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 12.5px;
+}
+
+.help-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+    font-size: 13px;
+}
+
+.help-table th,
+.help-table td {
+    border: 1px solid #e5e7eb;
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+}
+
+.help-table th {
+    background: #f8f9ff;
+    color: #333;
+    font-weight: 600;
+}
+
+.help-table code {
+    background: #f3f4f6;
+    color: #4b5563;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+/* Schema modal "Esc to close" hint */
+.esc-hint {
+    font-size: 12px;
+    font-weight: 400;
+    color: #999;
 }
