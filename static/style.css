@@ -46,35 +46,142 @@ h1 {
     margin: 0;
 }
 
-/* Message Container */
-.message-container {
-    padding: 12px 16px;
-    border-radius: 8px;
-    margin-bottom: 20px;
+/* ===== Toast notifications ===== */
+.toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 360px;
+    max-width: calc(100vw - 40px);
+    pointer-events: none;
+}
+
+.toast {
+    pointer-events: auto;
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 14px 14px 16px;
+    background: #fff;
+    border-radius: 10px;
+    border-left: 4px solid #999;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    overflow: hidden;
+    animation: toastIn 0.28s cubic-bezier(0.21, 1.02, 0.73, 1);
+}
+
+.toast--out {
+    animation: toastOut 0.25s ease forwards;
+}
+
+@keyframes toastIn {
+    from { opacity: 0; transform: translateX(120%); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toastOut {
+    from { opacity: 1; transform: translateX(0); }
+    to   { opacity: 0; transform: translateX(120%); }
+}
+
+.toast__icon {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    margin-top: 1px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.toast__icon svg {
+    width: 14px;
+    height: 14px;
+}
+
+.toast__msg {
+    flex: 1 1 auto;
     font-size: 14px;
-    animation: slideDown 0.3s ease-out;
+    line-height: 1.45;
+    color: #333;
+    word-break: break-word;
+    text-align: left;
 }
 
-.message-success {
-    background-color: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
+.toast__close {
+    flex: 0 0 auto;
+    border: none;
+    background: transparent;
+    color: #999;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+    margin-left: 4px;
+    transition: color 0.15s ease;
 }
 
-.message-error {
-    background-color: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
+.toast__close:hover {
+    color: #555;
 }
 
-@keyframes slideDown {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
+.toast__progress {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 3px;
+    width: 100%;
+    transform-origin: left center;
+    background: currentColor;
+    opacity: 0.45;
+    animation-name: toastProgress;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+}
+
+@keyframes toastProgress {
+    from { transform: scaleX(1); }
+    to   { transform: scaleX(0); }
+}
+
+/* Per-intent accents */
+.toast--success { border-left-color: #2e7d4f; }
+.toast--success .toast__icon { background: #d4edda; color: #2e7d4f; }
+.toast--success .toast__progress { color: #2e7d4f; }
+
+.toast--info { border-left-color: #667eea; }
+.toast--info .toast__icon { background: #e8eaff; color: #667eea; }
+.toast--info .toast__progress { color: #667eea; }
+
+.toast--warning { border-left-color: #c77700; }
+.toast--warning .toast__icon { background: #fff3cd; color: #c77700; }
+.toast--warning .toast__progress { color: #c77700; }
+
+.toast--error { border-left-color: #c0392b; }
+.toast--error .toast__icon { background: #f8d7da; color: #c0392b; }
+
+@media (prefers-reduced-motion: reduce) {
+    .toast,
+    .toast--out,
+    .toast__progress {
+        animation: none !important;
     }
-    to {
-        opacity: 1;
-        transform: translateY(0);
+    .toast--out { opacity: 0; }
+}
+
+@media (max-width: 600px) {
+    .toast-container {
+        top: 10px;
+        left: 10px;
+        right: 10px;
+        width: auto;
+        max-width: none;
     }
 }
 
@@ -817,27 +924,6 @@ input[type="number"].form-input {
     font-weight: 600;
     color: #333;
     margin: 20px 0 12px 0;
-}
-
-/* Message for Log Generator */
-.log-gen-message {
-    padding: 12px 16px;
-    border-radius: 8px;
-    font-size: 14px;
-    margin-top: 12px;
-    animation: slideDown 0.3s ease-out;
-}
-
-.log-gen-message.message-success {
-    background-color: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
-}
-
-.log-gen-message.message-error {
-    background-color: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
 }
 
 #download-bundle-link {
