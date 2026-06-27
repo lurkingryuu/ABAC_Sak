@@ -10,7 +10,8 @@ body {
     min-height: 100vh;
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: flex-start;
+    overflow-y: auto;
 }
 
 .container {
@@ -21,9 +22,11 @@ body {
     border-radius: 16px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     text-align: center;
-    /* Use min-height instead of max-height to allow growing */
-    min-height: 50vh; 
-    max-height: 95vh;
+    /* margin:auto centers the card while keeping its top reachable when it
+       exceeds the viewport (unlike align-items:center, which clips the top). */
+    margin: auto;
+    min-height: 50vh;
+    max-height: calc(100dvh - 40px);
     display: flex;
     flex-direction: column;
     overflow: hidden; /* clean edges */
@@ -505,41 +508,38 @@ h1 {
     flex: 0 0 auto;
 }
 
-.tab-content {
-    display: none;
-    /* Allow tab content to scroll without growing the outer card */
-    overflow-y: auto;
+/* Single inner scroll context — only this region scrolls (no nested scrollbars) */
+.content-scroll {
     flex: 1 1 auto;
     min-height: 0; /* required for overflow in flex children */
+    overflow-y: auto;
     padding-right: 10px; /* Space between content and scrollbar */
 }
 
-/* Custom Scrollbar for Tab Content */
-.tab-content::-webkit-scrollbar {
+/* Custom Scrollbar for the inner scroll region */
+.content-scroll::-webkit-scrollbar {
     width: 6px;
 }
 
-.tab-content::-webkit-scrollbar-track {
+.content-scroll::-webkit-scrollbar-track {
     background: transparent;
 }
 
-.tab-content::-webkit-scrollbar-thumb {
+.content-scroll::-webkit-scrollbar-thumb {
     background-color: rgba(0, 0, 0, 0.2);
     border-radius: 3px;
 }
 
-.tab-content::-webkit-scrollbar-thumb:hover {
+.content-scroll::-webkit-scrollbar-thumb:hover {
     background-color: rgba(0, 0, 0, 0.3);
+}
+
+.tab-content {
+    display: none;
 }
 
 .tab-content.active {
     display: block;
-}
-
-/* Edit JSON tab: standard scrolling */
-#editor-tab.tab-content {
-    overflow-y: auto;
-    display: none;
 }
 
 #editor-tab.active {
@@ -551,16 +551,17 @@ h1 {
     margin-bottom: 24px;
 }
 
-/* Fixed height editor to avoid scroll conflicts */
+/* Responsive, bounded editor height so the editor can never single-handedly
+   overflow the card (replaces the old 500px-vs-50vh conflict). */
 #editor-tab .json-editor-container {
-    height: 500px; /* Fixed height */
+    height: clamp(240px, 42vh, 460px);
     min-height: 0;
     max-height: none;
     flex: none;
 }
 
 #multimodal-tab .json-editor-container {
-    height: 300px; /* Fixed height for minimal config */
+    height: clamp(200px, 30vh, 320px);
     min-height: 0;
     max-height: none;
     flex: none;
@@ -570,12 +571,55 @@ h1 {
     margin-bottom: 0;
 }
 
-/* Log Generator Tab */
-#log-gen-tab.tab-content {
-    overflow-y: auto;
+/* Collapsed input summary (shown after a successful run) */
+.input-collapsed-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 14px 18px;
+    margin-bottom: 16px;
+    background: #f8f9ff;
+    border: 1px solid #c7ccf5;
+    border-radius: 10px;
+    text-align: left;
+    animation: fadeIn 0.4s ease-out;
+}
+
+.collapsed-bar-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: #333;
+}
+
+.collapsed-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    border-radius: 50%;
+    background: #d4edda;
+    color: #2e7d4f;
+    font-size: 13px;
+    font-weight: 700;
+    vertical-align: middle;
+}
+
+.edit-config-btn {
+    flex: 0 0 auto;
+}
+
+/* When collapsed, hide the heavy input controls; the summary bar (a sibling
+   placed before this element) remains visible. */
+.editor-wrapper.is-collapsed > *,
+#multimodal-form.is-collapsed > * {
     display: none;
 }
 
+/* Log Generator Tab */
 #log-gen-tab.active {
     display: block !important;
 }
@@ -596,8 +640,8 @@ h1 {
 
 .json-editor-container {
     width: 100%;
-    /* Constrain editor height */
-    height: 50vh;
+    /* Constrain editor height (per-tab overrides below refine this) */
+    height: clamp(240px, 42vh, 460px);
     border: 2px solid #ddd;
     border-radius: 8px;
     overflow: hidden;

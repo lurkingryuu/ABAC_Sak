@@ -29,8 +29,15 @@
             <button class="tab-btn tab-btn-help" data-tab="help">Help &amp; Guide</button>
         </div>
         
+        <!-- Single inner scroll context: tabs + shared output blocks -->
+        <div class="content-scroll">
+
         <!-- Standard Input (Editor) Tab -->
         <div id="editor-tab" class="tab-content active">
+            <div class="input-collapsed-bar" id="editor-collapsed-bar" style="display: none;">
+                <span class="collapsed-bar-label"><span class="collapsed-check">✓</span> Configuration submitted</span>
+                <button type="button" class="btn btn-secondary edit-config-btn">Edit configuration</button>
+            </div>
             <div class="editor-wrapper">
                 <div class="editor-header">
                     <input type="file" id="editor-file-upload" accept=".json" style="display: none;">
@@ -64,6 +71,10 @@
 
         <!-- Multimodal Input Tab -->
         <div id="multimodal-tab" class="tab-content">
+            <div class="input-collapsed-bar" id="multimodal-collapsed-bar" style="display: none;">
+                <span class="collapsed-bar-label"><span class="collapsed-check">✓</span> Configuration submitted</span>
+                <button type="button" class="btn btn-secondary edit-config-btn">Edit configuration</button>
+            </div>
             <form id="multimodal-form" action="/upload-multimodal" method="post" enctype="multipart/form-data">
                 <p class="section-description">
                     Sketch each attribute's value distribution by hand, then let MuSimA read the curves and build
@@ -343,6 +354,7 @@
                 </details>
             </div>
         </div>
+        </div><!-- /.content-scroll -->
     </div>
 
     <!-- Schema Modal -->
@@ -559,7 +571,11 @@
                 if (targetTab === 'editor' && monacoEditor) {
                     setTimeout(() => monacoEditor.layout(), 10);
                 }
-                
+
+                // The shared progress/download blocks belong to the input flows —
+                // hide them under Help/Generate-Logs and restore on input tabs.
+                updateOutputsVisibilityForTab(targetTab);
+
                 // Hide message when switching tabs
                 hideMessage();
             });
@@ -841,6 +857,7 @@
             }
             
             // Reset UI
+            lastSubmittedInput = 'editor';
             hideMessage();
             hideJsonError();
             downloadContainer.style.display = 'none';
@@ -1011,6 +1028,13 @@
                                 // Ensure log generator section is visible and enabled
                                 currentJobId = jobId;
                                 enableLogGenerator(jobId);
+
+                                // Collapse the input that produced this run so the
+                                // outputs get the space, then bring them into view.
+                                if (lastSubmittedInput) collapseInput(lastSubmittedInput);
+                                setTimeout(() => {
+                                    downloadContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                }, 120);
                             } else {
                                 downloadContainer.style.display = 'none';
                             }
@@ -1331,6 +1355,7 @@
                     return;
                 }
 
+                lastSubmittedInput = 'multimodal';
                 hideMessage();
                 hideMinJsonError();
                 downloadContainer.style.display = 'none';
@@ -1442,6 +1467,59 @@
             editorFileUpload.disabled = false;
             loadExampleBtn.disabled = false;
             viewSchemaBtn.disabled = false;
+        }
+
+        // ===== Collapse-on-success: free up space for the outputs =====
+        let lastSubmittedInput = null; // 'editor' | 'multimodal'
+
+        function collapseInput(which) {
+            if (which === 'editor') {
+                document.querySelector('#editor-tab .editor-wrapper').classList.add('is-collapsed');
+                document.getElementById('editor-collapsed-bar').style.display = 'flex';
+            } else if (which === 'multimodal') {
+                document.getElementById('multimodal-form').classList.add('is-collapsed');
+                document.getElementById('multimodal-collapsed-bar').style.display = 'flex';
+            }
+        }
+
+        function expandInput(which) {
+            if (which === 'editor') {
+                document.querySelector('#editor-tab .editor-wrapper').classList.remove('is-collapsed');
+                document.getElementById('editor-collapsed-bar').style.display = 'none';
+                if (monacoEditor) setTimeout(() => monacoEditor.layout(), 10);
+            } else if (which === 'multimodal') {
+                document.getElementById('multimodal-form').classList.remove('is-collapsed');
+                document.getElementById('multimodal-collapsed-bar').style.display = 'none';
+                if (minMonacoEditor) setTimeout(() => minMonacoEditor.layout(), 10);
+            }
+        }
+
+        document.querySelectorAll('.edit-config-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const bar = btn.closest('.input-collapsed-bar');
+                const which = (bar && bar.id === 'multimodal-collapsed-bar') ? 'multimodal' : 'editor';
+                expandInput(which);
+            });
+        });
+
+        // Keep the shared progress/download blocks contextual to the input tabs.
+        let savedOutputDisplay = null;
+        function updateOutputsVisibilityForTab(targetTab) {
+            const isInput = (targetTab === 'editor' || targetTab === 'multimodal');
+            if (!isInput) {
+                if (savedOutputDisplay === null) {
+                    savedOutputDisplay = {
+                        progress: progressContainer.style.display,
+                        download: downloadContainer.style.display
+                    };
+                }
+                progressContainer.style.display = 'none';
+                downloadContainer.style.display = 'none';
+            } else if (savedOutputDisplay !== null) {
+                progressContainer.style.display = savedOutputDisplay.progress;
+                downloadContainer.style.display = savedOutputDisplay.download;
+                savedOutputDisplay = null;
+            }
         }
 
         // Track current job ID from download links
