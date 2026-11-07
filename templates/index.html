@@ -124,10 +124,23 @@
                             <input type="file" id="zip-input" name="zip_file" accept=".zip" required>
                         </label>
                     </div>
-                    <figure id="tutorial-sketch" class="tutorial-detail" hidden>
-                        <img alt="Photograph of a hand-drawn bell curve labeled SA-1, with 12 at the end of the horizontal axis">
-                        <figcaption>Original drawing from the sample ZIP. SA-1 identifies the attribute and 12 sets its value count.</figcaption>
-                    </figure>
+                    <div id="tutorial-sketch" class="tutorial-detail" hidden>
+                        <h3>Original drawings from the sample ZIP</h3>
+                        <div class="tutorial-sketch-grid">
+                            <figure id="tutorial-subject-sketch">
+                                <img src="{{ url_for('static', filename='demo/peaked-sketch.jpg') }}" alt="Hand-drawn Normal curve labeled SA-1" loading="lazy" decoding="async">
+                                <figcaption><strong>SA-1</strong> · Subject · 12 values</figcaption>
+                            </figure>
+                            <figure id="tutorial-object-sketch">
+                                <img src="{{ url_for('static', filename='demo/object-sketch.png') }}" alt="Hand-drawn bell curve labeled OA-1" loading="lazy" decoding="async">
+                                <figcaption><strong>OA-1</strong> · Object · 20 values</figcaption>
+                            </figure>
+                            <figure id="tutorial-environment-sketch">
+                                <img src="{{ url_for('static', filename='demo/environment-sketch.jpg') }}" alt="Hand-drawn Poisson curve labeled EA-1" loading="lazy" decoding="async">
+                                <figcaption><strong>EA-1</strong> · Environment · 19 values</figcaption>
+                            </figure>
+                        </div>
+                    </div>
                 </div>
 
                 <div id="recaptcha-multimodal" style="margin: 20px 0;"></div>
@@ -167,29 +180,26 @@
         
          <div id="download-container" class="download-container" style="display: none;">
             <div class="download-section">
-                <h3 class="section-title">📥 Download Outputs</h3>
-                <a href="#" id="download-bundle-link" class="btn btn-success" download>
-                    <svg class="download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="7 10 12 15 17 10"></polyline>
-                        <line x1="12" y1="15" x2="12" y2="3"></line>
-                    </svg>
-                    Download Outputs Bundle
-                </a>
+                <div id="output-bundle-summary">
+                    <h3 class="section-title">📥 Download Outputs</h3>
+                    <a href="#" id="download-bundle-link" class="btn btn-success" download>
+                        <svg class="download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                        Download Outputs Bundle
+                    </a>
+                    <ul class="output-legend">
+                        <li><code>output.json</code> lists entities, attributes, possible values, assignments, and policy rules.</li>
+                        <li><code>ACM.txt</code> records each subject × object × environment decision (1 = permit, 0 = deny).</li>
+                        <li><code>access_data.txt</code> gives the assigned attribute values and decision for each request.</li>
+                        <li><code>distribution_attestations/plots/</code> compares expected and observed assignments.</li>
+                        <li><code>distribution_attestations/comparisons/</code> shows the original sketches beside the fitted distributions in multimodal runs.</li>
+                        <li><code>README.txt</code> describes the bundle files.</li>
+                    </ul>
+                </div>
                 <div id="tutorial-output" class="tutorial-detail" hidden></div>
-                <ul class="output-legend">
-                    <li><code>output.json</code> — full ABAC system: subjects/objects/environments (S/O/E),
-                        their attributes &amp; values, per-entity assignments, and the generated policy rules.</li>
-                    <li><code>ACM.txt</code> — Access Control Matrix as 0/1 over Subjects × Objects × Environments
-                        (1 = allowed).</li>
-                    <li><code>access_data.txt</code> — flattened access records (attribute columns + decision),
-                        ready for ML.</li>
-                    <li><code>distribution_attestations/plots/</code> — expected vs. actual attribute
-                        distributions.</li>
-                    <li><code>distribution_attestations/comparisons/</code> — sketch vs. realized plots
-                        (multimodal runs only).</li>
-                    <li><code>README.txt</code> — this same reference, included in the bundle.</li>
-                </ul>
             </div>
         </div>
 

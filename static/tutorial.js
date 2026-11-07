@@ -3,19 +3,37 @@
     const asset = (name) => new URL(name, assets).href;
     const $ = (id) => document.getElementById(id);
     const steps = [
-        [0, 'Configure a synthetic ABAC benchmark', ''],
-        [20, 'Describe an attribute with a sketch', 'Keep the entity sizes and rule counts in JSON. The sketches supply attribute definitions and distributions.'],
-        [36, 'Check the fit and generated counts', 'Compare what MuSimA read from the drawing with the values it assigned to subjects.'],
-        [58, 'Trace one access decision', 'Start with three entity IDs. Look up their assigned attribute values, match the rule, and read the resulting decision in the access control matrix.'],
-        [74, 'Sample a synthetic access log', 'Generate Logs samples requests from the matrix. The requested permit share controls the CSV sample. It does not change the policy or the matrix.'],
+        [0, 'Configure ABAC with Standard Input', ''],
+        [36, 'Specify distributions with drawings', 'Multimodal Input keeps entity and rule counts in JSON and reads attribute definitions and distributions from drawings.'],
+        [61, 'Inspect the simulation outputs', 'Both input modes run the same simulator. It assigns attribute values, generates policy rules, and evaluates every request.'],
+        [85, 'Trace one access decision', 'An ABAC request combines a subject, object, and environment instance. The policy evaluates their assigned attribute values.'],
+        [105, 'Sample a synthetic access log', 'After the simulation, Generate Logs samples requests and their decisions from the completed matrix.'],
     ];
     const entityKeys = ['subject_size', 'object_size', 'environment_size'];
     const ruleKeys = ['permit_rules_count', 'deny_rules_count'];
+    const attributeKeys = (entity) => ['attributes_count', 'attributes_values', 'distributions'].map(field => entity + '_' + field);
+    const standardBeatSeconds = 6;
     const configFields = [
-        [entityKeys, '200 subjects × 30 objects × 3 environment instances gives 18,000 possible requests.'],
-        [['subject_attributes_count', 'subject_attributes_values'], 'One subject attribute, SA_1, has 12 possible values. Each subject is assigned one of them.'],
-        [['subject_distributions'], 'N means Normal. A mean of 4 centers the distribution near SA_1_4. Variance controls how spread out the assignments are.'],
-        [ruleKeys, 'MuSimA generates five permit rules and three deny rules. The rules evaluate attribute values to decide each request.'],
+        [entityKeys, 'In attribute-based access control (ABAC), a subject requests an object under some conditions. This example evaluates 200 subjects × 30 objects × 3 environments, or 18,000 requests.'],
+        [attributeKeys('subject'), 'Each subject gets one value of SA_1. There are 12 possible values. A Normal distribution (N), centered at 4, sets how likely each value is.', 'A subject attribute could describe the requester’s department.'],
+        [attributeKeys('object'), 'Each object gets one value of OA_1. There are 20 possible values. This Normal distribution is centered at 12.', 'An object attribute could describe a resource’s sensitivity.'],
+        [attributeKeys('environment'), 'Each environment instance gets one value of EA_1. There are 19 possible values. This Poisson distribution (P) uses a rate λ of 13.', 'An environment attribute could describe the time or location of a request.'],
+        [ruleKeys, 'MuSimA generates five permit and three deny rules. Each rule combines subject, object, and environment attribute conditions. A matching deny takes precedence.'],
+        [[], 'Upload or edit the full JSON, then select Generate Simulation. Standard Input accepts Normal, Poisson, or Uniform distributions for each attribute.'],
+    ];
+    const sketchPhases = [
+        [0, 'min-json-editor', steps[1][2]],
+        [4, 'zip-wrapper', 'Upload the minimal JSON and a ZIP containing one original drawing per attribute.'],
+        [7, 'tutorial-subject-sketch', 'SA-1 identifies the first subject attribute. The rightmost x-axis value sets its domain to 12 possible values. The curve describes their relative frequency.'],
+        [12, 'tutorial-object-sketch', 'OA-1 identifies the first object attribute. This drawing specifies a Normal curve over 20 possible values.'],
+        [17, 'tutorial-environment-sketch', 'EA-1 identifies the first environment attribute. This drawing specifies a Poisson distribution over 19 possible values.'],
+        [22, 'submit-multimodal-btn', 'Process Multimodal Input fits the sketches, merges those settings with the minimal JSON, and runs the simulation.'],
+    ];
+    const resultPhases = [
+        [4.5, 'output-bundle-summary', 'The ZIP contains the generated entities, attribute assignments, and policy in output.json, plus the decision matrix, flattened dataset, and distribution plots.'],
+        [10, 'tutorial-fitted-json', 'For example, MuSimA read 12 possible SA_1 values and fitted a Normal distribution with mean 4 and variance 6.25.'],
+        [14.5, 'tutorial-fit-comparison', 'The original SA-1 drawing is on the left and the fitted curve is on the right. The ZIP includes comparisons for the object and environment drawings too.'],
+        [19, 'tutorial-counts', 'Bars show how many subjects received each value. The dashed line shows expected counts. The two runs differ only in the SA_1 distribution.'],
     ];
 
     async function load(name, read) {
@@ -115,7 +133,7 @@
         list.className = 'tutorial-trace';
         const rows = [
             ['1. Identify the request', `(${entities.join(', ')})`, 'Subject, object, environment instance. Each is an entity ID.'],
-            ['2. Look up assigned values', `SV[${subject}] → ${sa} · OV[${resource}] → ${oa} · EV[${environment}] → ${ea}`, `SA_1, OA_1, and EA_1 are the first subject, object, and environment attributes. ${sa} is value ${sa.split('_').at(-1)} of SA_1. SAV lists possible values, and SV gives each subject’s assignments.`],
+            ['2. Look up assigned values', `SV[${subject}] → ${sa} · OV[${resource}] → ${oa} · EV[${environment}] → ${ea}`, 'SV, OV, and EV store the assigned values for subjects, objects, and environments. SA_1, OA_1, and EA_1 are the names of the attributes.'],
             ['3. Evaluate the rules', rule, 'All three conditions match this permit rule, and no deny rule matches. When both types are present, a matching deny takes precedence.'],
             ['4. Locate the decision', `ACM[${entities.join(', ')}] = ${matrix}`, '1 means permit. The flattened dataset records the assigned values and decision together.'],
             ['5. Match the exported rows', flattened, `The sampled CSV uses entity IDs: ${csv}.`],
@@ -158,7 +176,7 @@
         let current = 0;
         let phase = -1;
         let highlight;
-        let liveRun = false;
+        let liveInput;
         let elapsed = 0;
         let origin = 0;
         let playing = false;
@@ -214,15 +232,19 @@
                 range, options: { isWholeLine: true, className: 'tutorial-config-line' },
             })));
             editor.layout();
-            editor.revealLinesInCenterIfOutsideViewport(ranges[0].startLineNumber, ranges.at(-1).endLineNumber);
+            editor.revealLinesInCenterIfOutsideViewport(
+                ranges[0].startLineNumber, ranges.at(-1).endLineNumber, monaco.editor.ScrollType.Immediate,
+            );
         }
 
         function showConfigField(index) {
-            const [keys, caption] = configFields[index];
+            const [keys, caption, context] = configFields[index];
             setCaption(caption);
+            setNote(context ?? '');
             fieldButtons.forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)));
-            spotlight($('json-editor'));
-            spotlightFields(0, keys);
+            spotlight($(keys.length ? 'json-editor' : 'submit-json-btn'));
+            if (keys.length) spotlightFields(0, keys);
+            else clearFields();
         }
 
         function setExampleInputs() {
@@ -232,7 +254,7 @@
 
         function updateControls() {
             $('tutorial-back').disabled = current === 0;
-            $('tutorial-next').disabled = Boolean(!replay && current === 1 && !liveRun);
+            $('tutorial-next').disabled = Boolean(!replay && current === 1 && !liveInput);
             $('tutorial-next').textContent = current === steps.length - 1 ? 'Finish' : 'Next';
             $('tutorial-next').hidden = Boolean(replay && current === steps.length - 1);
             $('tutorial-load').hidden = current !== 1 || Boolean(replay);
@@ -255,7 +277,8 @@
             output.hidden = true;
             sketch.hidden = true;
             logPreview.hidden = true;
-            const tab = ['editor', 'multimodal', 'multimodal', 'multimodal', 'log-gen'][index];
+            const resultTab = replay ? 'multimodal' : liveInput ?? 'multimodal';
+            const tab = ['editor', 'multimodal', resultTab, resultTab, 'log-gen'][index];
             if (replay && index === 4) workspace.showExampleResult(asset('peaked-output.zip'));
             workspace.selectTab(tab);
             const [, heading, caption] = steps[index];
@@ -287,8 +310,9 @@
                 spotlight(progress);
             } else if (index === 2 || index === 3) {
                 if (replay) workspace.showExampleResult(asset('peaked-output.zip'));
-                setNote(replay ? '' : 'The download button opens your run. The inspector shows the paired tutorial example.');
+                setNote(replay ? '' : 'The ZIP is from your run. The inspector shows the saved multimodal example.');
                 showOutput(index);
+                if (index === 2) spotlight($('output-bundle-summary'));
             } else {
                 if (replay) {
                     $('num-logs').value = exampleLogs.count;
@@ -302,47 +326,49 @@
 
         function showPhase(seconds) {
             if (current === 0) {
-                const next = Math.min(3, Math.floor(seconds / 5));
+                const next = Math.min(configFields.length - 1, Math.floor(seconds / standardBeatSeconds));
                 if (phase === next) return;
                 phase = next;
                 showConfigField(next);
             } else if (current === 1) {
-                const next = seconds < 4 ? 0 : seconds < 6 ? 1 : seconds < 13 ? 2 : 3;
+                const next = sketchPhases.findLastIndex(([start]) => seconds >= start);
                 if (phase === next) return;
                 phase = next;
                 clearFields();
                 if (next > 0 && !zipInput.files.length) setFiles(zipInput, [sampleZip]);
                 sketch.hidden = next < 2;
-                setCaption([
-                    steps[1][2],
-                    'The sample ZIP contains original drawings for a subject, an object, and an environment attribute.',
-                    'Find SA-1 on the paper. It identifies the first subject attribute. The 12 at the right of the x-axis gives its number of possible values.',
-                    'Process Multimodal Input reads the drawings, builds the full configuration, and runs the simulation.',
-                ][next]);
-                spotlight($(['min-json-editor', 'zip-wrapper', 'tutorial-sketch', 'submit-multimodal-btn'][next]));
+                const [, target, caption] = sketchPhases[next];
+                setCaption(caption);
+                spotlight($(target));
                 if (next === 0) spotlightFields(1, [...entityKeys, ...ruleKeys]);
             } else if (current === 2) {
-                const next = seconds < 1.5 ? 0 : seconds < 3 ? 1 : seconds < 4.5 ? 2 : seconds < 10 ? 3 : seconds < 16 ? 4 : 5;
+                const result = resultPhases.findLastIndex(([start]) => seconds >= start);
+                const next = result < 0 ? Math.floor(seconds / 1.5) : result + 3;
                 if (phase === next) return;
                 phase = next;
                 workspace.resetProgressSteps();
                 workspace.activateStep(['step-upload', 'step-process', 'step-generate', 'step-complete'][Math.min(next, 3)]);
-                if (next >= 3 && output.hidden) {
+                if (result >= 0 && output.hidden) {
                     workspace.showExampleResult(asset('peaked-output.zip'));
                     showOutput(2);
+                    setNote('Showing a completed example.');
                 }
-                if (next >= 3) {
-                    setCaption([
-                        'MuSimA read 12 possible SA_1 values from the drawing and fitted a Normal distribution with mean 4 and variance 6.25.',
-                        'The original hand drawing is on the left. On the right is the curve MuSimA fitted to it.',
-                        'Bars count the subjects assigned each value. The dashed line shows the expected counts. Both runs use the same settings except for the SA_1 distribution.',
-                    ][next - 3]);
-                    spotlight($(['tutorial-fitted-json', 'tutorial-fit-comparison', 'tutorial-counts'][next - 3]));
+                if (result >= 0) {
+                    const [, target, caption] = resultPhases[result];
+                    setCaption(caption);
+                    spotlight($(target));
                 }
             } else if (current === 3) {
-                const next = seconds < 5 ? 0 : seconds < 9 ? 2 : 4;
+                const next = Math.min(4, Math.floor(seconds / 4));
                 if (phase === next) return;
                 phase = next;
+                setCaption([
+                    steps[3][2],
+                    'Look up the attribute value assigned to each of the three entities in this request.',
+                    'All three conditions must match this permit rule. A matching deny rule would override it.',
+                    'The matrix stores one decision for each subject, object, and environment tuple.',
+                    'The flattened dataset exports attribute values and the decision. The sampled log CSV uses entity IDs and the decision.',
+                ][next]);
                 spotlight(output.querySelector('.tutorial-trace').children[next]);
             } else if (current === 4) {
                 const next = seconds < 2.5 ? 0 : seconds < 4 ? 1 : 2;
@@ -479,14 +505,13 @@
                 const rows = logs.trimEnd().split(/\r?\n/).slice(1);
                 exampleLogs = { csv: logs, count: rows.length, permits: rows.filter(row => row.endsWith(',permit')).length };
                 sampleZip = zip instanceof File ? zip : new File([zip], 'peaked-input.zip', { type: 'application/zip' });
-                sketch.querySelector('img').src = asset('peaked-sketch.jpg');
                 const originals = editors.map(editor => ({ model: editor.getModel(), view: editor.saveViewState() }));
                 const models = [example.standard, example.minimal].map(config => monaco.editor.createModel(JSON.stringify(config, null, 2), 'json'));
                 session = { editors, originals, models, tab: document.querySelector('.tab-btn.active').dataset.tab,
                     files: [...zipInput.files], collapsed: collapsed() };
                 editors.forEach((editor, index) => editor.setModel(models[index]));
                 setFiles(zipInput, []);
-                liveRun = false;
+                liveInput = null;
                 panel.querySelector('.tutorial-controls').hidden = false;
                 startReplay();
                 $('tutorial-heading').focus({ preventScroll: true });
@@ -507,7 +532,7 @@
                 return;
             }
             const index = current + offset;
-            const delay = playing ? 0 : [0, 6, 4.5, 0, 4][index];
+            const delay = playing ? 0 : [0, 7, 4.5, 0, 4][index];
             renderTime(steps[index][0] + delay, true);
             origin = performance.now() - elapsed * 1000;
         }
@@ -520,7 +545,7 @@
         fieldButtons.forEach((button, index) => button.addEventListener('click', () => {
             if (replay) {
                 setPlaying(false);
-                renderTime(index * 5);
+                renderTime(index * standardBeatSeconds);
             } else {
                 workspace.selectTab('editor');
                 workspace.expandInput('editor');
@@ -532,7 +557,7 @@
             sketch.hidden = false;
             clearFields();
             spotlight(sketch);
-            setCaption('Find SA-1 and 12 on the drawing. They identify the first subject attribute and its number of possible values.');
+            setCaption('The three drawings specify distributions for the first subject, object, and environment attributes. Each rightmost x-axis value gives the number of possible values.');
             setNote('Example inputs loaded. Complete verification, then select Process Multimodal Input.');
         });
         $('tutorial-mode').addEventListener('click', () => {
@@ -551,9 +576,9 @@
             link.addEventListener('focus', () => { if (replay) setPlaying(false); });
         }
         document.addEventListener('musima:job-completed', (event) => {
-            if (!session || replay || event.detail.input !== 'multimodal') return;
-            liveRun = true;
-            if (current === 1) showStage(2);
+            if (!session || replay) return;
+            liveInput = event.detail.input;
+            if (current <= 1) showStage(2);
         });
         if (new URL(location.href).searchParams.get('tutorial') === 'autoplay') open();
     }

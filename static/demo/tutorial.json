@@ -149,16 +149,8 @@
     "deny_rules_count": 3,
     "seed": 42026,
     "subject_attributes_count": 1,
-    "object_attributes_count": 1,
-    "environment_attributes_count": 1,
     "subject_attributes_values": [
       12
-    ],
-    "object_attributes_values": [
-      20
-    ],
-    "environment_attributes_values": [
-      19
     ],
     "subject_distributions": [
       {
@@ -167,12 +159,20 @@
         "variance": 6.25
       }
     ],
+    "object_attributes_count": 1,
+    "object_attributes_values": [
+      20
+    ],
     "object_distributions": [
       {
         "distribution": "N",
         "mean": 12.0,
         "variance": 25.0
       }
+    ],
+    "environment_attributes_count": 1,
+    "environment_attributes_values": [
+      19
     ],
     "environment_distributions": [
       {
