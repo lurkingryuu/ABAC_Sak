@@ -73,7 +73,8 @@
 .tutorial-active .header { margin-bottom: 13px; }
 .tutorial-focus { outline: 2px solid #7953bd; outline-offset: 3px; scroll-margin-block: 5px; }
 .tutorial-autoplay #recaptcha-json, .tutorial-autoplay #recaptcha-multimodal,
-.tutorial-autoplay .monaco-editor .iPadShowKeyboard { display: none; }
+.tutorial-autoplay .monaco-editor .iPadShowKeyboard,
+.tutorial-autoplay #live-log-preview { display: none; }
 .tutorial-detail { margin-top: 14px; padding: 12px; border: 1px solid #d9cdef; border-radius: 10px; background: #fff; text-align: left; }
 .tutorial-detail h3 { margin: 0 0 8px; color: #342651; font-size: 17px; }
 .tutorial-detail p { margin: 6px 0; line-height: 1.4; }

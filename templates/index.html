@@ -198,7 +198,7 @@
             <div class="log-generator-container">
                 <p class="section-description">
                     Create synthetic access logs by sampling the completed simulation's Access Control Matrix (ACM).
-                    Logs download as CSV with columns: subject, object, environment, access (permit/deny).
+                    Preview the sampled rows and download the full CSV.
                 </p>
 
                 <div id="log-gen-empty-state" class="empty-state">
@@ -206,49 +206,66 @@
                     unlocks here automatically.
                 </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="num-logs">Number of Logs to Generate</label>
-                    <p class="form-hint">How many access records to sample. Range: 1 to 1,000,000.</p>
-                    <input 
-                        type="number" 
-                        id="num-logs" 
-                        name="num_logs" 
-                        value="1000"
-                        min="1"
-                        max="1000000"
-                        class="form-input"
-                        placeholder="e.g., 1000"
-                        disabled
-                    >
-                </div>
+                <div id="log-generator-controls">
+                    <div class="form-group">
+                        <label class="form-label" for="num-logs">Number of Logs to Generate</label>
+                        <p class="form-hint">How many access records to sample. Range: 1 to 1,000,000.</p>
+                        <input
+                            type="number"
+                            id="num-logs"
+                            name="num_logs"
+                            value="1000"
+                            min="1"
+                            max="1000000"
+                            class="form-input"
+                            placeholder="e.g., 1000"
+                            disabled
+                        >
+                    </div>
 
-                <div class="form-group">
-                    <label class="form-label" for="allow-percentage">Allow Percentage (%)</label>
-                    <p class="form-hint">Share of generated rows that should be permit (allow). Range: 0 to 99.9.</p>
-                    <input
-                        type="number" 
-                        id="allow-percentage" 
-                        name="allow_percentage" 
-                        value="50"
-                        min="0"
-                        max="99.9"
-                        step="0.1"
-                        class="form-input"
-                        placeholder="e.g., 50"
-                        disabled
-                    >
-                </div>
+                    <div class="form-group">
+                        <label class="form-label" for="allow-percentage">Allow Percentage (%)</label>
+                        <p class="form-hint">Share of generated rows that should be permit (allow). Range: 0 to 99.9.</p>
+                        <input
+                            type="number"
+                            id="allow-percentage"
+                            name="allow_percentage"
+                            value="50"
+                            min="0"
+                            max="99.9"
+                            step="0.1"
+                            class="form-input"
+                            placeholder="e.g., 50"
+                            disabled
+                        >
+                    </div>
 
-                <div class="form-group">
-                    <button id="generate-logs-btn" class="btn btn-primary" disabled>
-                        <span class="btn-text">Generate Logs (CSV)</span>
-                        <span class="btn-loader" style="display: none;">
-                            <span class="spinner"></span>
-                            Generating...
-                        </span>
-                    </button>
+                    <div class="form-group">
+                        <button id="generate-logs-btn" class="btn btn-primary" disabled>
+                            <span class="btn-text">Generate Logs (CSV)</span>
+                            <span class="btn-loader" style="display: none;">
+                                <span class="spinner"></span>
+                                Generating...
+                            </span>
+                        </button>
+                    </div>
                 </div>
-
+                <section id="live-log-preview" class="log-preview" hidden></section>
+                <section id="tutorial-log-preview" class="log-preview" hidden></section>
+                <template id="log-preview-template">
+                    <h3></h3>
+                    <p></p>
+                    <table>
+                        <caption></caption>
+                        <thead><tr>
+                            <th scope="col">Subject</th>
+                            <th scope="col">Object</th>
+                            <th scope="col">Environment</th>
+                            <th scope="col">Access</th>
+                        </tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </template>
             </div>
         </div>
 
@@ -1142,7 +1159,9 @@
 
             // Cap visible toasts (drop oldest = last child)
             while (toastContainer.children.length > TOAST_MAX_VISIBLE) {
-                dismissToast(toastContainer.lastElementChild);
+                const oldest = toastContainer.lastElementChild;
+                clearTimeout(oldest._timer);
+                oldest.remove();
             }
         }
 
@@ -1427,6 +1446,28 @@
         let currentJobId = null;
 
         const logGenEmptyState = document.getElementById('log-gen-empty-state');
+        const liveLogPreview = document.getElementById('live-log-preview');
+        const exampleLogPreview = document.getElementById('tutorial-log-preview');
+        let liveLogUrl;
+
+        function renderLogPreview(preview, csv, { title, count, permits, trace }) {
+            // MuSimA writes only synthetic IDs and permit/deny, with no CSV quoting needed.
+            const rows = csv.trimEnd().split(/\r?\n/, 9).slice(1);
+            const content = document.getElementById('log-preview-template').content.cloneNode(true);
+            const number = (value) => value.toLocaleString('en-US');
+            content.querySelector('h3').textContent = title;
+            content.querySelector('p').textContent = `${number(count)} sampled · ${number(permits)} permit · ${number(count - permits)} deny`;
+            content.querySelector('caption').textContent = `CSV preview · Showing ${rows.length} of ${number(count)}`;
+            const body = content.querySelector('tbody');
+            for (const line of rows) {
+                const row = body.insertRow();
+                row.classList.toggle('log-preview-trace', line === trace);
+                for (const value of line.split(',')) row.insertCell().textContent = value;
+                row.lastElementChild.dataset.access = row.lastElementChild.textContent;
+            }
+            preview.replaceChildren(content);
+            preview.hidden = false;
+        }
 
         // Initialize log generator as disabled
         function disableLogGenerator() {
@@ -1526,6 +1567,11 @@
                 savedOutputDisplay ??= { progress: '', download: '' };
                 savedOutputDisplay.download = 'block';
             }
+            if (jobId && jobId !== currentJobId) {
+                liveLogPreview.hidden = true;
+                if (liveLogUrl) URL.revokeObjectURL(liveLogUrl);
+                liveLogUrl = undefined;
+            }
             currentJobId = jobId;
             enableLogGenerator();
             if (input) collapseInput(input);
@@ -1539,6 +1585,7 @@
 
             const numLogs = parseInt(numLogsInput.value);
             const allowPercentage = parseFloat(allowPercentageInput.value);
+            const jobId = currentJobId;
 
             // Validate inputs
             if (isNaN(numLogs) || numLogs <= 0) {
@@ -1561,7 +1608,7 @@
             try {
                 showLogMessage(`Generating ${numLogs} logs with ${allowPercentage}% permit rate...`, 'info');
 
-                const response = await fetch(`/generate-logs/${currentJobId}`, {
+                const response = await fetch(`/generate-logs/${jobId}`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -1584,18 +1631,28 @@
                     return;
                 }
 
-                // Download the CSV file
                 const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
+                const csvStart = await blob.slice(0, 4096).text();
+                const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
                 link.href = url;
                 link.download = 'logs.csv';
-                document.body.appendChild(link);
+                link.textContent = 'Download CSV';
+                if (jobId === currentJobId) {
+                    renderLogPreview(liveLogPreview, csvStart, {
+                        title: 'Generated access logs',
+                        count: numLogs,
+                        permits: Math.trunc(numLogs * allowPercentage / 100),
+                    });
+                    if (liveLogUrl) URL.revokeObjectURL(liveLogUrl);
+                    liveLogUrl = url;
+                    liveLogPreview.append(link);
+                    liveLogPreview.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+                } else {
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                }
                 link.click();
-                document.body.removeChild(link);
-                window.URL.revokeObjectURL(url);
-
-                showLogMessage('✓ Logs generated and downloaded successfully!', 'success');
+                showLogMessage('Logs generated and downloaded.', 'success');
 
             } catch (error) {
                 showLogMessage('Error: ' + error.message, 'error');
@@ -1625,6 +1682,9 @@
                 resetProgressSteps,
                 activateStep,
                 showExampleResult: (bundle) => showJobResult(bundle, null, 'multimodal'),
+                showExampleLogs: (csv, count, permits, trace) => {
+                    renderLogPreview(exampleLogPreview, csv, { title: 'Saved example access logs', count, permits, trace });
+                },
                 clearExampleResult: () => {
                     currentJobId = null;
                     disableLogGenerator();

@@ -141,15 +141,16 @@
         const sketch = $('tutorial-sketch');
         const timeline = $('tutorial-progress');
         const note = $('tutorial-note');
+        const logPreview = $('tutorial-log-preview');
         const fieldButtons = [...$('tutorial-fields').querySelectorAll('button')];
         const autoplayControls = ['tutorial-play', 'tutorial-restart', 'tutorial-progress'];
-        const replayInputs = [$('editor-tab'), $('multimodal-form'), document.querySelector('.log-generator-container'), document.querySelector('.tabs')];
+        const replayInputs = [$('editor-tab'), $('multimodal-form'), $('log-generator-controls'), document.querySelector('.tabs')];
         const inputModes = ['editor', 'multimodal'];
         const collapsed = () => [document.querySelector('#editor-tab .editor-wrapper'), $('multimodal-form')]
             .map((element) => element.classList.contains('is-collapsed'));
         const duration = Number(timeline.max);
-        const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
         let example;
+        let exampleLogs;
         let sampleZip;
         let session;
         let replay;
@@ -235,7 +236,7 @@
             $('tutorial-next').textContent = current === steps.length - 1 ? 'Finish' : 'Next';
             $('tutorial-next').hidden = Boolean(replay && current === steps.length - 1);
             $('tutorial-load').hidden = current !== 1 || Boolean(replay);
-            $('tutorial-logs').hidden = current !== 4;
+            $('tutorial-logs').hidden = logPreview.hidden;
             $('tutorial-mode').textContent = replay ? 'Hands-on' : 'Autoplay';
             for (const id of autoplayControls) $(id).hidden = !replay;
         }
@@ -253,6 +254,7 @@
             $('tutorial-fields').hidden = index !== 0;
             output.hidden = true;
             sketch.hidden = true;
+            logPreview.hidden = true;
             const tab = ['editor', 'multimodal', 'multimodal', 'multimodal', 'log-gen'][index];
             if (replay && index === 4) workspace.showExampleResult(asset('peaked-output.zip'));
             workspace.selectTab(tab);
@@ -289,11 +291,12 @@
                 showOutput(index);
             } else {
                 if (replay) {
-                    $('num-logs').value = 1000;
-                    $('allow-percentage').value = 20;
+                    $('num-logs').value = exampleLogs.count;
+                    $('allow-percentage').value = 100 * exampleLogs.permits / exampleLogs.count;
+                } else {
+                    setNote('Generate Logs to preview the first rows from your run and download the full CSV.');
+                    spotlight($('generate-logs-btn'));
                 }
-                setNote(`Example CSV row from the peaked run: ${example.trace.csv}`);
-                spotlight($('generate-logs-btn'));
             }
         }
 
@@ -341,6 +344,23 @@
                 if (phase === next) return;
                 phase = next;
                 spotlight(output.querySelector('.tutorial-trace').children[next]);
+            } else if (current === 4) {
+                const next = seconds < 2.5 ? 0 : seconds < 4 ? 1 : 2;
+                if (phase === next) return;
+                phase = next;
+                if (next === 0) {
+                    setCaption('Choose how many requests to sample and what share should be permits.');
+                    spotlight($('log-generator-controls'));
+                } else if (next === 1) {
+                    setCaption('Generate Logs samples subject, object, and environment IDs with their decisions from the access control matrix.');
+                    spotlight($('generate-logs-btn'));
+                } else {
+                    const { csv, count, permits } = exampleLogs;
+                    workspace.showExampleLogs(csv, count, permits, example.trace.csv);
+                    setCaption('The table shows the first rows of the saved CSV. The highlighted row is the request traced in the previous step.');
+                    updateControls();
+                    spotlight(logPreview);
+                }
             }
         }
 
@@ -370,6 +390,7 @@
         function stopReplay() {
             if (!replay) return;
             setPlaying(false);
+            logPreview.hidden = true;
             document.body.classList.remove('tutorial-autoplay');
             replayInputs.forEach((element) => { element.inert = false; });
             workspace.selectTab('editor');
@@ -390,7 +411,7 @@
             session.models[0].setValue(JSON.stringify(example.standard, null, 2));
             session.models[1].setValue(JSON.stringify(example.minimal, null, 2));
             renderTime(0, true);
-            setPlaying(!reducedMotion);
+            setPlaying(true);
         }
 
         function clearAutoplayLink() {
@@ -429,7 +450,7 @@
             start.focus();
         }
 
-        async function open(auto) {
+        async function open() {
             if (session || starting) return;
             if (workspace.busy()) {
                 start.textContent = 'Wait for the current job, then start tutorial';
@@ -448,12 +469,15 @@
             const attempt = Symbol();
             open.attempt = attempt;
             try {
-                const [editors, data, zip] = await Promise.all([
+                const [editors, data, zip, logs] = await Promise.all([
                     waitForEditors(workspace), example ?? load('tutorial.json', 'json'), sampleZip ?? load('peaked-input.zip', 'blob'),
+                    exampleLogs?.csv ?? load('peaked-logs.csv', 'text'),
                 ]);
                 if (!starting || open.attempt !== attempt) return;
                 if (workspace.busy()) throw new Error('Wait for the current job to finish, then start again.');
                 example = data;
+                const rows = logs.trimEnd().split(/\r?\n/).slice(1);
+                exampleLogs = { csv: logs, count: rows.length, permits: rows.filter(row => row.endsWith(',permit')).length };
                 sampleZip = zip instanceof File ? zip : new File([zip], 'peaked-input.zip', { type: 'application/zip' });
                 sketch.querySelector('img').src = asset('peaked-sketch.jpg');
                 const originals = editors.map(editor => ({ model: editor.getModel(), view: editor.saveViewState() }));
@@ -464,8 +488,7 @@
                 setFiles(zipInput, []);
                 liveRun = false;
                 panel.querySelector('.tutorial-controls').hidden = false;
-                if (auto) startReplay();
-                else showStage(0);
+                startReplay();
                 $('tutorial-heading').focus({ preventScroll: true });
             } catch (error) {
                 if (starting && open.attempt === attempt) {
@@ -484,13 +507,13 @@
                 return;
             }
             const index = current + offset;
-            const delay = playing ? 0 : [0, 6, 4.5, 0, 0][index];
+            const delay = playing ? 0 : [0, 6, 4.5, 0, 4][index];
             renderTime(steps[index][0] + delay, true);
             origin = performance.now() - elapsed * 1000;
         }
 
         start.hidden = false;
-        start.addEventListener('click', () => open(false));
+        start.addEventListener('click', open);
         $('tutorial-exit').addEventListener('click', close);
         $('tutorial-back').addEventListener('click', () => advance(-1));
         $('tutorial-next').addEventListener('click', () => advance(1));
@@ -522,7 +545,7 @@
         $('tutorial-play').addEventListener('click', () => setPlaying(!playing));
         $('tutorial-restart').addEventListener('click', () => {
             renderTime(0, true);
-            setPlaying(!reducedMotion);
+            setPlaying(true);
         });
         for (const link of [$('download-bundle-link'), $('tutorial-logs')]) {
             link.addEventListener('focus', () => { if (replay) setPlaying(false); });
@@ -532,7 +555,7 @@
             liveRun = true;
             if (current === 1) showStage(2);
         });
-        if (new URL(location.href).searchParams.get('tutorial') === 'autoplay') open(true);
+        if (new URL(location.href).searchParams.get('tutorial') === 'autoplay') open();
     }
 
     window.MuSimATutorial = { mount };
