@@ -1,10 +1,12 @@
 from flask import (
     Flask,
     jsonify,
+    redirect,
     render_template,
     request,
     send_file,
     send_from_directory,
+    url_for,
 )
 import os
 import subprocess
@@ -812,7 +814,7 @@ def index():
 
 @app.route('/demo')
 def demo():
-    return render_template('index.html', demo_mode=True)
+    return redirect(url_for('index', tutorial='autoplay'))
 
 
 @app.route('/recaptcha-site-key', methods=['GET'])

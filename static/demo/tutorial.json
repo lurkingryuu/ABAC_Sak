@@ -1,18 +1,8 @@
-window.MUSIMA_DEMO = {
-  "config": {
-    "subject_size": 200,
-    "object_size": 30,
-    "environment_size": 3,
-    "permit_rules_count": 5,
-    "deny_rules_count": 3
-  },
+{
   "runs": [
     {
       "label": "Flat",
       "family": "Uniform",
-      "zip": "flat-input.zip",
-      "fit": null,
-      "detail": "Gemini fitted a Uniform distribution across the twelve training levels.",
       "bins": [
         {
           "level": 1,
@@ -74,38 +64,11 @@ window.MUSIMA_DEMO = {
           "expected": 16.67,
           "observed": 17
         }
-      ],
-      "rules": {
-        "permit": "SA_1 = SA_1_12, OA_1 = OA_1_1, EA_1 = EA_1_1",
-        "deny": "SA_1 = SA_1_9, OA_1 = OA_1_1, EA_1 = EA_1_2"
-      },
-      "logs": [
-        [
-          "S_113",
-          "O_12",
-          "E_3",
-          "permit"
-        ],
-        [
-          "S_154",
-          "O_12",
-          "E_1",
-          "deny"
-        ],
-        [
-          "S_142",
-          "O_8",
-          "E_3",
-          "deny"
-        ]
       ]
     },
     {
       "label": "Peaked",
       "family": "Normal",
-      "zip": "peaked-input.zip",
-      "fit": "peaked-fit.png",
-      "detail": "Gemini fitted a Normal curve centered at level 9.",
       "bins": [
         {
           "level": 1,
@@ -167,31 +130,68 @@ window.MUSIMA_DEMO = {
           "expected": 21.88,
           "observed": 22
         }
-      ],
-      "rules": {
-        "permit": "SA_1 = SA_1_12, OA_1 = OA_1_1, EA_1 = EA_1_1",
-        "deny": "SA_1 = SA_1_11, OA_1 = OA_1_1, EA_1 = EA_1_2"
-      },
-      "logs": [
-        [
-          "S_16",
-          "O_9",
-          "E_2",
-          "permit"
-        ],
-        [
-          "S_125",
-          "O_29",
-          "E_3",
-          "deny"
-        ],
-        [
-          "S_88",
-          "O_7",
-          "E_1",
-          "deny"
-        ]
       ]
     }
-  ]
-};
+  ],
+  "minimal": {
+    "subject_size": 200,
+    "object_size": 30,
+    "environment_size": 3,
+    "permit_rules_count": 5,
+    "deny_rules_count": 3,
+    "seed": 42026
+  },
+  "standard": {
+    "subject_size": 200,
+    "object_size": 30,
+    "environment_size": 3,
+    "permit_rules_count": 5,
+    "deny_rules_count": 3,
+    "seed": 42026,
+    "subject_attributes_count": 1,
+    "object_attributes_count": 1,
+    "environment_attributes_count": 1,
+    "subject_attributes_values": [
+      12
+    ],
+    "object_attributes_values": [
+      4
+    ],
+    "environment_attributes_values": [
+      3
+    ],
+    "subject_distributions": [
+      {
+        "distribution": "N",
+        "mean": 9.0,
+        "variance": 6.25
+      }
+    ],
+    "object_distributions": [
+      {
+        "distribution": "U"
+      }
+    ],
+    "environment_distributions": [
+      {
+        "distribution": "U"
+      }
+    ]
+  },
+  "trace": {
+    "entities": [
+      "S_16",
+      "O_9",
+      "E_2"
+    ],
+    "values": [
+      "SA_1_10",
+      "OA_1_3",
+      "EA_1_2"
+    ],
+    "rule": "SA_1 = SA_1_10, OA_1 = OA_1_3, EA_1 = EA_1_2",
+    "matrix": "1",
+    "flattened": "SA_1_10 OA_1_3 EA_1_2 1",
+    "csv": "S_16,O_9,E_2,permit"
+  }
+}
