@@ -3,11 +3,19 @@
     const asset = (name) => new URL(name, assets).href;
     const $ = (id) => document.getElementById(id);
     const steps = [
-        [0, 'Configure a synthetic ABAC benchmark', 'S, O, and E are subjects, objects, and environment instances. The JSON sets their counts, the attributes each has, the possible values, their distributions, and the permit and deny rule counts.'],
-        [12, 'Describe an attribute with a sketch', 'Minimal JSON keeps the entity and rule counts. A sketch labeled SA-1 inside the image describes the first subject attribute. The rightmost x-axis label tells MuSimA how many values it has.'],
-        [27, 'Check the fit and generated counts', 'The fitted curve describes the target. The generated counts show how often each value was actually assigned. Both example runs use the same configuration apart from the distribution for SA_1.'],
-        [43, 'Trace one access decision', 'Start with three entity IDs. Look up their assigned attribute values, match the rule, and read the resulting decision in the access control matrix.'],
-        [57, 'Sample a synthetic access log', 'Generate Logs samples requests from the matrix. The requested permit share controls the CSV sample. It does not change the policy or the matrix.'],
+        [0, 'Configure a synthetic ABAC benchmark', ''],
+        [20, 'Describe an attribute with a sketch', 'Keep the entity sizes and rule counts in JSON. The sketches supply attribute definitions and distributions.'],
+        [36, 'Check the fit and generated counts', 'Compare what MuSimA read from the drawing with the values it assigned to subjects.'],
+        [58, 'Trace one access decision', 'Start with three entity IDs. Look up their assigned attribute values, match the rule, and read the resulting decision in the access control matrix.'],
+        [74, 'Sample a synthetic access log', 'Generate Logs samples requests from the matrix. The requested permit share controls the CSV sample. It does not change the policy or the matrix.'],
+    ];
+    const entityKeys = ['subject_size', 'object_size', 'environment_size'];
+    const ruleKeys = ['permit_rules_count', 'deny_rules_count'];
+    const configFields = [
+        [entityKeys, '200 subjects × 30 objects × 3 environment instances gives 18,000 possible requests.'],
+        [['subject_attributes_count', 'subject_attributes_values'], 'One subject attribute, SA_1, has 12 possible values. Each subject is assigned one of them.'],
+        [['subject_distributions'], 'N means Normal. A mean of 4 centers the distribution near SA_1_4. Variance controls how spread out the assignments are.'],
+        [ruleKeys, 'MuSimA generates five permit rules and three deny rules. The rules evaluate attribute values to decide each request.'],
     ];
 
     async function load(name, read) {
@@ -70,15 +78,26 @@
 
     function exampleComparison(data) {
         const fragment = document.createDocumentFragment();
-        const heading = node('h3', 'Distribution attestation · Paired example runs');
-        const fit = node('p');
+        const heading = node('h3', 'Distribution attestation · Two example runs');
+        const fit = node('pre');
+        fit.id = 'tutorial-fitted-json';
+        fit.className = 'tutorial-fit-json';
         const { subject_attributes_values, subject_distributions } = data.standard;
-        fit.append('Fitted JSON for SA_1 ', node('code', JSON.stringify({ subject_attributes_values, subject_distributions })));
+        const fitCode = node('code');
+        const fittedJson = JSON.stringify({ subject_attributes_values, subject_distributions }, null, 2);
+        fittedJson.split('\n').forEach((line, index) => {
+            if (index) fitCode.append('\n');
+            const row = node('span', line);
+            if (/^\s*(?:"|\d)/.test(line)) row.className = 'tutorial-config-line';
+            fitCode.append(row);
+        });
+        fit.append(fitCode);
         const figure = node('figure');
+        figure.id = 'tutorial-fit-comparison';
         const image = node('img');
         image.src = asset('peaked-fit.png');
         image.alt = 'Original SA-1 sketch beside the Normal curve Gemini fitted';
-        figure.append(image, node('figcaption', 'Sketch and fitted curve for the peaked run. The fit provides the parameters used to assign values.'));
+        figure.append(image, node('figcaption', 'Original hand drawing and the fitted curve from the same run.'));
         const charts = node('div');
         charts.className = 'tutorial-charts';
         charts.id = 'tutorial-counts';
@@ -96,7 +115,7 @@
         list.className = 'tutorial-trace';
         const rows = [
             ['1. Identify the request', `(${entities.join(', ')})`, 'Subject, object, environment instance. Each is an entity ID.'],
-            ['2. Look up assigned values', `SV[${subject}] → ${sa} · OV[${resource}] → ${oa} · EV[${environment}] → ${ea}`, 'SA_1, OA_1, and EA_1 are the first subject, object, and environment attributes. SA_1_10 is the tenth possible value of SA_1. SAV lists its possible values, and SV gives each subject’s assignments.'],
+            ['2. Look up assigned values', `SV[${subject}] → ${sa} · OV[${resource}] → ${oa} · EV[${environment}] → ${ea}`, `SA_1, OA_1, and EA_1 are the first subject, object, and environment attributes. ${sa} is value ${sa.split('_').at(-1)} of SA_1. SAV lists possible values, and SV gives each subject’s assignments.`],
             ['3. Evaluate the rules', rule, 'All three conditions match this permit rule, and no deny rule matches. When both types are present, a matching deny takes precedence.'],
             ['4. Locate the decision', `ACM[${entities.join(', ')}] = ${matrix}`, '1 means permit. The flattened dataset records the assigned values and decision together.'],
             ['5. Match the exported rows', flattened, `The sampled CSV uses entity IDs: ${csv}.`],
@@ -122,6 +141,7 @@
         const sketch = $('tutorial-sketch');
         const timeline = $('tutorial-progress');
         const note = $('tutorial-note');
+        const fieldButtons = [...$('tutorial-fields').querySelectorAll('button')];
         const autoplayControls = ['tutorial-play', 'tutorial-restart', 'tutorial-progress'];
         const replayInputs = [$('editor-tab'), $('multimodal-form'), document.querySelector('.log-generator-container'), document.querySelector('.tabs')];
         const inputModes = ['editor', 'multimodal'];
@@ -142,10 +162,15 @@
         let origin = 0;
         let playing = false;
         let frame;
+        let fieldHighlight;
 
         function setNote(message) {
             note.textContent = message;
             note.hidden = !message;
+        }
+
+        function setCaption(message) {
+            $('tutorial-caption').textContent = message;
         }
 
         function spotlight(element) {
@@ -153,7 +178,50 @@
             highlight = element;
             if (!highlight) return;
             highlight.classList.add('tutorial-focus');
-            highlight.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+            const viewport = highlight.closest('.content-scroll');
+            const block = viewport && highlight.clientHeight > viewport.clientHeight ? 'start' : 'nearest';
+            highlight.scrollIntoView({ block, behavior: 'instant' });
+        }
+
+        function clearFields() {
+            fieldHighlight?.clear();
+            fieldHighlight = null;
+        }
+
+        function spotlightFields(index, keys) {
+            clearFields();
+            const editor = session.editors[index];
+            const model = editor.getModel();
+            const ranges = keys.flatMap(key => {
+                const [match] = model.findMatches('"' + key + '"', false, false, true, null, false, 1);
+                if (!match) return [];
+                const first = match.range.startLineNumber;
+                const line = model.getLineContent(first);
+                let last = first;
+                if (line.trimEnd().endsWith('[')) {
+                    const indent = line.search(/\S/);
+                    while (last < model.getLineCount()) {
+                        last++;
+                        const nextIndent = model.getLineContent(last).search(/\S/);
+                        if (nextIndent >= 0 && nextIndent <= indent) break;
+                    }
+                }
+                return [new monaco.Range(first, 1, last, model.getLineMaxColumn(last))];
+            }).sort((a, b) => a.startLineNumber - b.startLineNumber);
+            if (!ranges.length) return;
+            fieldHighlight = editor.createDecorationsCollection(ranges.map(range => ({
+                range, options: { isWholeLine: true, className: 'tutorial-config-line' },
+            })));
+            editor.layout();
+            editor.revealLinesInCenterIfOutsideViewport(ranges[0].startLineNumber, ranges.at(-1).endLineNumber);
+        }
+
+        function showConfigField(index) {
+            const [keys, caption] = configFields[index];
+            setCaption(caption);
+            fieldButtons.forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)));
+            spotlight($('json-editor'));
+            spotlightFields(0, keys);
         }
 
         function setExampleInputs() {
@@ -181,6 +249,8 @@
         function showStage(index) {
             current = index;
             phase = -1;
+            clearFields();
+            $('tutorial-fields').hidden = index !== 0;
             output.hidden = true;
             sketch.hidden = true;
             const tab = ['editor', 'multimodal', 'multimodal', 'multimodal', 'log-gen'][index];
@@ -189,27 +259,24 @@
             const [, heading, caption] = steps[index];
             $('tutorial-step').textContent = `${index + 1} of ${steps.length} · ${replay ? 'Autoplay · Example run' : 'Hands-on tutorial'}`;
             $('tutorial-heading').textContent = heading;
-            $('tutorial-caption').textContent = caption;
+            setCaption(caption);
             setNote('');
             updateControls();
 
             if (index < 2) {
                 workspace.expandInput(tab);
-                if (index === 0) {
-                    const { subject_size, object_size, environment_size } = example.minimal;
-                    setNote(`The example evaluates ${subject_size} subjects × ${object_size} objects × ${environment_size} environment instances = ${(subject_size * object_size * environment_size).toLocaleString('en-US')} requests.`);
-                }
                 if (replay) {
                     workspace.clearExampleResult();
                     progress.style.display = 'none';
                     download.style.display = 'none';
-                    if (index === 1) {
-                        session.models[1].setValue(JSON.stringify(example.minimal, null, 2));
-                        setFiles(zipInput, []);
-                    }
+                    if (index === 1) setFiles(zipInput, []);
                 }
                 if (index === 1 && !replay) setNote('Load the sample or use your own inputs. Complete verification and select Process Multimodal Input to continue.');
-                spotlight($(index === 0 ? 'json-editor' : 'min-json-editor'));
+                if (index === 0 && !replay) showConfigField(0);
+                if (index === 1 && !replay) {
+                    spotlight($('min-json-editor'));
+                    spotlightFields(1, [...entityKeys, ...ruleKeys]);
+                }
             } else if (index === 2 && replay) {
                 download.style.display = 'none';
                 workspace.collapseInput('multimodal');
@@ -231,15 +298,28 @@
         }
 
         function showPhase(seconds) {
-            if (current === 1) {
-                const next = seconds < 4 ? 0 : seconds < 6 ? 1 : seconds < 9 ? 2 : 3;
+            if (current === 0) {
+                const next = Math.min(3, Math.floor(seconds / 5));
                 if (phase === next) return;
                 phase = next;
-                if (next > 0 && !zipInput.files.length) setExampleInputs();
+                showConfigField(next);
+            } else if (current === 1) {
+                const next = seconds < 4 ? 0 : seconds < 6 ? 1 : seconds < 13 ? 2 : 3;
+                if (phase === next) return;
+                phase = next;
+                clearFields();
+                if (next > 0 && !zipInput.files.length) setFiles(zipInput, [sampleZip]);
                 sketch.hidden = next < 2;
+                setCaption([
+                    steps[1][2],
+                    'The sample ZIP contains original drawings for a subject, an object, and an environment attribute.',
+                    'Find SA-1 on the paper. It identifies the first subject attribute. The 12 at the right of the x-axis gives its number of possible values.',
+                    'Process Multimodal Input reads the drawings, builds the full configuration, and runs the simulation.',
+                ][next]);
                 spotlight($(['min-json-editor', 'zip-wrapper', 'tutorial-sketch', 'submit-multimodal-btn'][next]));
+                if (next === 0) spotlightFields(1, [...entityKeys, ...ruleKeys]);
             } else if (current === 2) {
-                const next = seconds < 1.5 ? 0 : seconds < 3 ? 1 : seconds < 5 ? 2 : seconds < 10 ? 3 : 4;
+                const next = seconds < 1.5 ? 0 : seconds < 3 ? 1 : seconds < 4.5 ? 2 : seconds < 10 ? 3 : seconds < 16 ? 4 : 5;
                 if (phase === next) return;
                 phase = next;
                 workspace.resetProgressSteps();
@@ -248,7 +328,14 @@
                     workspace.showExampleResult(asset('peaked-output.zip'));
                     showOutput(2);
                 }
-                if (next === 4) spotlight($('tutorial-counts'));
+                if (next >= 3) {
+                    setCaption([
+                        'MuSimA read 12 possible SA_1 values from the drawing and fitted a Normal distribution with mean 4 and variance 6.25.',
+                        'The original hand drawing is on the left. On the right is the curve MuSimA fitted to it.',
+                        'Bars count the subjects assigned each value. The dashed line shows the expected counts. Both runs use the same settings except for the SA_1 distribution.',
+                    ][next - 3]);
+                    spotlight($(['tutorial-fitted-json', 'tutorial-fit-comparison', 'tutorial-counts'][next - 3]));
+                }
             } else if (current === 3) {
                 const next = seconds < 5 ? 0 : seconds < 9 ? 2 : 4;
                 if (phase === next) return;
@@ -301,6 +388,7 @@
             replayInputs.forEach((element) => { element.inert = true; });
             document.body.classList.add('tutorial-autoplay');
             session.models[0].setValue(JSON.stringify(example.standard, null, 2));
+            session.models[1].setValue(JSON.stringify(example.minimal, null, 2));
             renderTime(0, true);
             setPlaying(!reducedMotion);
         }
@@ -315,6 +403,7 @@
         function close() {
             starting = false;
             stopReplay();
+            clearFields();
             if (session) {
                 for (const [index, editor] of session.editors.entries()) {
                     editor.setModel(session.originals[index].model);
@@ -349,6 +438,8 @@
             starting = true;
             panel.hidden = false;
             start.hidden = true;
+            document.body.classList.add('tutorial-active');
+            $('tutorial-fields').hidden = true;
             $('tutorial-heading').textContent = 'Loading tutorial';
             $('tutorial-caption').textContent = 'Preparing the existing workspace and example files.';
             $('tutorial-step').textContent = '';
@@ -366,13 +457,12 @@
                 sampleZip = zip instanceof File ? zip : new File([zip], 'peaked-input.zip', { type: 'application/zip' });
                 sketch.querySelector('img').src = asset('peaked-sketch.jpg');
                 const originals = editors.map(editor => ({ model: editor.getModel(), view: editor.saveViewState() }));
-                const models = [example.standard, {}].map(config => monaco.editor.createModel(JSON.stringify(config, null, 2), 'json'));
+                const models = [example.standard, example.minimal].map(config => monaco.editor.createModel(JSON.stringify(config, null, 2), 'json'));
                 session = { editors, originals, models, tab: document.querySelector('.tab-btn.active').dataset.tab,
                     files: [...zipInput.files], collapsed: collapsed() };
                 editors.forEach((editor, index) => editor.setModel(models[index]));
                 setFiles(zipInput, []);
                 liveRun = false;
-                document.body.classList.add('tutorial-active');
                 panel.querySelector('.tutorial-controls').hidden = false;
                 if (auto) startReplay();
                 else showStage(0);
@@ -394,7 +484,7 @@
                 return;
             }
             const index = current + offset;
-            const delay = playing ? 0 : [0, 9, 5, 0, 0][index];
+            const delay = playing ? 0 : [0, 6, 4.5, 0, 0][index];
             renderTime(steps[index][0] + delay, true);
             origin = performance.now() - elapsed * 1000;
         }
@@ -404,10 +494,22 @@
         $('tutorial-exit').addEventListener('click', close);
         $('tutorial-back').addEventListener('click', () => advance(-1));
         $('tutorial-next').addEventListener('click', () => advance(1));
+        fieldButtons.forEach((button, index) => button.addEventListener('click', () => {
+            if (replay) {
+                setPlaying(false);
+                renderTime(index * 5);
+            } else {
+                workspace.selectTab('editor');
+                workspace.expandInput('editor');
+                showConfigField(index);
+            }
+        }));
         $('tutorial-load').addEventListener('click', () => {
             setExampleInputs();
             sketch.hidden = false;
+            clearFields();
             spotlight(sketch);
+            setCaption('Find SA-1 and 12 on the drawing. They identify the first subject attribute and its number of possible values.');
             setNote('Example inputs loaded. Complete verification, then select Process Multimodal Input.');
         });
         $('tutorial-mode').addEventListener('click', () => {

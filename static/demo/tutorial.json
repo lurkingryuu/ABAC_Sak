@@ -1,7 +1,7 @@
 {
   "runs": [
     {
-      "label": "Flat",
+      "label": "Standard Input",
       "family": "Uniform",
       "bins": [
         {
@@ -67,68 +67,68 @@
       ]
     },
     {
-      "label": "Peaked",
+      "label": "Hand-drawn input",
       "family": "Normal",
       "bins": [
         {
           "level": 1,
-          "expected": 0.12,
-          "observed": 0
+          "expected": 12.76,
+          "observed": 7
         },
         {
           "level": 2,
-          "expected": 0.42,
-          "observed": 0
+          "expected": 20.49,
+          "observed": 18
         },
         {
           "level": 3,
-          "expected": 1.28,
-          "observed": 1
-        },
-        {
-          "level": 4,
-          "expected": 3.29,
-          "observed": 2
-        },
-        {
-          "level": 5,
-          "expected": 7.24,
-          "observed": 4
-        },
-        {
-          "level": 6,
-          "expected": 13.62,
-          "observed": 12
-        },
-        {
-          "level": 7,
-          "expected": 21.88,
-          "observed": 21
-        },
-        {
-          "level": 8,
-          "expected": 30.0,
-          "observed": 35
-        },
-        {
-          "level": 9,
-          "expected": 35.13,
-          "observed": 41
-        },
-        {
-          "level": 10,
-          "expected": 35.13,
-          "observed": 32
-        },
-        {
-          "level": 11,
-          "expected": 30.0,
+          "expected": 28.1,
           "observed": 30
         },
         {
+          "level": 4,
+          "expected": 32.91,
+          "observed": 37
+        },
+        {
+          "level": 5,
+          "expected": 32.91,
+          "observed": 34
+        },
+        {
+          "level": 6,
+          "expected": 28.1,
+          "observed": 24
+        },
+        {
+          "level": 7,
+          "expected": 20.49,
+          "observed": 23
+        },
+        {
+          "level": 8,
+          "expected": 12.76,
+          "observed": 14
+        },
+        {
+          "level": 9,
+          "expected": 6.79,
+          "observed": 5
+        },
+        {
+          "level": 10,
+          "expected": 3.08,
+          "observed": 4
+        },
+        {
+          "level": 11,
+          "expected": 1.19,
+          "observed": 3
+        },
+        {
           "level": 12,
-          "expected": 21.88,
-          "observed": 22
+          "expected": 0.4,
+          "observed": 1
         }
       ]
     }
@@ -155,43 +155,46 @@
       12
     ],
     "object_attributes_values": [
-      4
+      20
     ],
     "environment_attributes_values": [
-      3
+      19
     ],
     "subject_distributions": [
       {
         "distribution": "N",
-        "mean": 9.0,
+        "mean": 4.0,
         "variance": 6.25
       }
     ],
     "object_distributions": [
       {
-        "distribution": "U"
+        "distribution": "N",
+        "mean": 12.0,
+        "variance": 25.0
       }
     ],
     "environment_distributions": [
       {
-        "distribution": "U"
+        "distribution": "P",
+        "lambda": 13.0
       }
     ]
   },
   "trace": {
     "entities": [
-      "S_16",
-      "O_9",
-      "E_2"
+      "S_27",
+      "O_4",
+      "E_3"
     ],
     "values": [
-      "SA_1_10",
-      "OA_1_3",
-      "EA_1_2"
+      "SA_1_8",
+      "OA_1_6",
+      "EA_1_10"
     ],
-    "rule": "SA_1 = SA_1_10, OA_1 = OA_1_3, EA_1 = EA_1_2",
+    "rule": "SA_1 = SA_1_8, OA_1 = OA_1_6, EA_1 = EA_1_10",
     "matrix": "1",
-    "flattened": "SA_1_10 OA_1_3 EA_1_2 1",
-    "csv": "S_16,O_9,E_2,permit"
+    "flattened": "SA_1_8 OA_1_6 EA_1_10 1",
+    "csv": "S_27,O_4,E_3,permit"
   }
 }

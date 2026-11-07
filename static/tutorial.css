@@ -12,10 +12,19 @@
 }
 
 #tutorial-start[hidden], .tutorial[hidden], .tutorial [hidden], .tutorial-detail[hidden] { display: none !important; }
+.tutorial-active {
+    display: grid;
+    grid-template-columns: minmax(0, 800px) minmax(270px, 310px);
+    gap: 16px;
+}
+.tutorial-active .container {
+    min-width: 0;
+    height: calc(100dvh - 40px);
+    margin: 0;
+}
 .tutorial {
-    flex: 0 0 auto;
-    margin: 0 0 14px;
-    padding: 13px 16px;
+    min-width: 0;
+    padding: 14px 16px;
     border: 1px solid #d9cdef;
     border-left: 4px solid #6942b8;
     border-radius: 10px;
@@ -47,20 +56,41 @@
     outline-offset: 2px;
 }
 .tutorial #tutorial-next, .tutorial #tutorial-load { background: #6040a5; color: white; }
+.tutorial #tutorial-fields { margin: 8px 0; }
+.tutorial #tutorial-fields button { padding-inline: 6px; font-size: 12px; }
+.tutorial #tutorial-fields [aria-pressed="true"] {
+    border-color: #6942b8;
+    background: #eee5fc;
+    color: #392465;
+}
+.monaco-editor .tutorial-config-line {
+    background: #eee5fc;
+    box-shadow: inset 3px 0 #7953bd;
+}
 .tutorial progress { width: 100%; height: 5px; margin-top: 6px; accent-color: #6942b8; }
 .tutorial-active .tabs { margin-bottom: 12px; }
+.tutorial-active .tab-btn { min-width: 0; padding-inline: 8px; }
 .tutorial-active .header { margin-bottom: 13px; }
-.tutorial-focus { outline: 2px solid #7953bd; outline-offset: 3px; }
-.tutorial-autoplay #recaptcha-json, .tutorial-autoplay #recaptcha-multimodal { display: none; }
+.tutorial-focus { outline: 2px solid #7953bd; outline-offset: 3px; scroll-margin-block: 5px; }
+.tutorial-autoplay #recaptcha-json, .tutorial-autoplay #recaptcha-multimodal,
+.tutorial-autoplay .monaco-editor .iPadShowKeyboard { display: none; }
 .tutorial-detail { margin-top: 14px; padding: 12px; border: 1px solid #d9cdef; border-radius: 10px; background: #fff; text-align: left; }
 .tutorial-detail h3 { margin: 0 0 8px; color: #342651; font-size: 17px; }
 .tutorial-detail p { margin: 6px 0; line-height: 1.4; }
 .tutorial-detail figure { margin: 8px 0; }
 .tutorial-detail img { display: block; width: 100%; height: auto; }
 .tutorial-detail figcaption { margin-top: 5px; color: #5a4a70; font-size: 13px; }
+.tutorial-fit-json { margin: 8px 0; padding: 10px; background: #f6f1fb; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tutorial-fit-json .tutorial-config-line { background: #eee5fc; }
 .tutorial-detail p code { overflow-wrap: anywhere; }
 #tutorial-sketch { margin-inline: 0; }
-#tutorial-sketch img { max-height: 230px; object-fit: contain; }
+#tutorial-sketch img {
+    width: min(100%, 300px, 40dvh);
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    object-position: top;
+    margin-inline: auto;
+}
 .tutorial-active .download-container, .tutorial-active .progress-container { animation: none; }
 .tutorial-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .tutorial-charts svg { display: block; width: 100%; height: auto; }
@@ -73,8 +103,18 @@
 .tutorial-trace dt { font-weight: 700; }
 .tutorial-trace dd { margin: 3px 0 0; overflow-wrap: anywhere; }
 .tutorial-trace code { color: #392465; }
+@media (max-width: 840px) {
+    .tutorial-active {
+        grid-template-columns: minmax(0, 800px);
+        grid-template-rows: auto minmax(0, 1fr);
+        height: 100dvh;
+        min-height: 540px;
+        gap: 8px;
+    }
+    .tutorial-active .container { grid-row: 2; height: 100%; min-height: 0; }
+    .tutorial { grid-row: 1; padding: 9px 10px; font-size: 13px; }
+    .tutorial h2 { font-size: 18px; }
+}
 @media (max-width: 480px) {
-    .tutorial-active .container { min-height: calc(100dvh - 20px); }
-    .tutorial { padding: 9px 10px; font-size: 13px; }
     .tutorial-charts { grid-template-columns: 1fr; }
 }

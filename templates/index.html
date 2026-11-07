@@ -31,8 +31,6 @@
             <button class="tab-btn" data-tab="log-gen" id="log-gen-tab-btn" disabled title="Available after a simulation completes">Generate Logs</button>
             <button class="tab-btn tab-btn-help" data-tab="help">Help &amp; Guide</button>
         </div>
-        {% include 'tutorial.html' %}
-        
         <!-- Single inner scroll context: tabs + shared output blocks -->
         <div class="content-scroll">
 
@@ -127,8 +125,8 @@
                         </label>
                     </div>
                     <figure id="tutorial-sketch" class="tutorial-detail" hidden>
-                        <img alt="The sample SA-1 sketch, with twelve possible attribute values on its horizontal axis">
-                        <figcaption>Inside the sample ZIP. SA-1 identifies the attribute and 12 sets its value count.</figcaption>
+                        <img alt="Photograph of a hand-drawn bell curve labeled SA-1, with 12 at the end of the horizontal axis">
+                        <figcaption>Original drawing from the sample ZIP. SA-1 identifies the attribute and 12 sets its value count.</figcaption>
                     </figure>
                 </div>
 
@@ -437,7 +435,8 @@
             </div>
         </div>
     </div>
-    
+    {% include 'tutorial.html' %}
+
     <script>
         // Get reCAPTCHA site key from server
         let recaptchaSiteKey = '';
