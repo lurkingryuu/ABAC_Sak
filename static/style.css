@@ -49,6 +49,16 @@ h1 {
     margin: 0;
 }
 
+.demo-link {
+    display: inline-block;
+    margin-top: 12px;
+    color: #4d3993;
+    font-size: 14px;
+    font-weight: 650;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
 /* ===== Toast notifications ===== */
 .toast-container {
     position: fixed;

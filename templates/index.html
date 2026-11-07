@@ -5,24 +5,54 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MuSimA - Multi-Modal Simulator for ABAC Systems</title>
     <link rel="stylesheet" href="/static/style.css">
+    {% if demo_mode %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='demo.css') }}">
+    <script defer src="{{ url_for('static', filename='demo/data.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='demo.js') }}"></script>
+    {% else %}
     <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
     <script src="https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit" async defer></script>
     <script>
         // Configure Monaco Editor paths after loader is loaded
         require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
     </script>
+    {% endif %}
 </head>
-<body>
+<body{% if demo_mode %} class="demo-mode"{% endif %}>
     <div class="container">
         <div class="header">
             <h1>MuSimA</h1>
             <p class="subtitle">A Multi-Modal Simulator for ABAC Systems</p>
+            {% if demo_mode %}
+            <span class="demo-tag">Demo mode · Replay of real runs</span>
+            <a class="demo-link" href="{{ url_for('index') }}">Open live workspace ↗</a>
+            {% else %}
+            <a class="demo-link" href="{{ url_for('demo') }}">Watch guided demo</a>
+            {% endif %}
         </div>
         
         <div id="toast-container" class="toast-container" role="region" aria-live="polite" aria-label="Notifications"></div>
 
+        {% if demo_mode %}
+        <div class="demo-layout">
+            <aside class="demo-guide" aria-labelledby="demo-title">
+                <p class="demo-kicker"><span id="demo-number">01</span> Synthetic hospital</p>
+                <h2 id="demo-title">One hospital. Two staff profiles.</h2>
+                <p id="demo-caption">Change a training-level sketch to generate a different access-control test dataset.</p>
+                <div class="demo-metrics" aria-label="Example size">
+                    <span><strong data-demo-count="subject_size"></strong> staff</span>
+                    <span><strong data-demo-count="object_size"></strong> records</span>
+                    <span><strong data-demo-count="environment_size"></strong> operating conditions</span>
+                </div>
+                <div id="demo-actions" hidden>
+                    <a class="btn btn-primary" href="{{ url_for('index') }}">Try MuSimA live</a>
+                    <a class="btn btn-secondary" href="{{ url_for('static', filename='demo/example.zip') }}" download>Download both runs</a>
+                </div>
+            </aside>
+            <div class="demo-workspace">
+        {% endif %}
         <!-- Tabs -->
-        <div class="tabs">
+        <div class="tabs"{% if demo_mode %} inert{% endif %}>
             <button class="tab-btn active" data-tab="editor">Standard Input</button>
             <button class="tab-btn" data-tab="multimodal">Multimodal Input</button>
             <button class="tab-btn" data-tab="log-gen" id="log-gen-tab-btn" disabled title="Available after a simulation completes">Generate Logs</button>
@@ -31,9 +61,12 @@
         
         <!-- Single inner scroll context: tabs + shared output blocks -->
         <div class="content-scroll">
+        {% if demo_mode %}
+        <div id="demo-overview" class="demo-result"></div>
+        {% endif %}
 
         <!-- Standard Input (Editor) Tab -->
-        <div id="editor-tab" class="tab-content active">
+        <div id="editor-tab" class="tab-content{% if not demo_mode %} active{% endif %}"{% if demo_mode %} inert{% endif %}>
             <div class="input-collapsed-bar" id="editor-collapsed-bar" style="display: none;">
                 <span class="collapsed-bar-label"><span class="collapsed-check">✓</span> Configuration submitted</span>
                 <button type="button" class="btn btn-secondary edit-config-btn">Edit configuration</button>
@@ -75,7 +108,7 @@
                 <span class="collapsed-bar-label"><span class="collapsed-check">✓</span> Configuration submitted</span>
                 <button type="button" class="btn btn-secondary edit-config-btn">Edit configuration</button>
             </div>
-            <form id="multimodal-form" action="/upload-multimodal" method="post" enctype="multipart/form-data">
+            <form id="multimodal-form" action="/upload-multimodal" method="post" enctype="multipart/form-data"{% if demo_mode %} inert{% endif %}>
                 <p class="section-description">
                     Sketch each attribute's value distribution by hand, then let MuSimA read the curves and build
                     the full configuration for you. Provide a ZIP of the sketches plus a minimal JSON config.
@@ -96,7 +129,7 @@
                             <button type="button" id="min-json-upload-btn" class="btn btn-secondary">Upload JSON</button>
                             <button type="button" id="min-json-load-example-btn" class="btn btn-secondary">Load Example</button>
                     </div>
-                        <div id="min-json-editor" class="json-editor-container"></div>
+                        <div id="min-json-editor" class="json-editor-container">{% if demo_mode %}<pre id="demo-config"></pre>{% endif %}</div>
                         <div class="editor-footer">
                             <div id="min-json-error" class="json-error" style="display: none;"></div>
                 </div>
@@ -158,11 +191,16 @@
                 </div>
             </div>
         </div>
+        {% if demo_mode %}
+        <div id="demo-fit" class="demo-result" hidden>
+            <figure class="demo-fit"><img id="demo-fit-image" alt="Original staff sketch beside the distribution fitted by MuSimA"></figure>
+        </div>
+        {% endif %}
         
          <div id="download-container" class="download-container" style="display: none;">
             <div class="download-section">
                 <h3 class="section-title">📥 Download Outputs</h3>
-                <a href="#" id="download-bundle-link" class="btn btn-success" download>
+                <a href="{% if demo_mode %}{{ url_for('static', filename='demo/peaked-output.zip') }}{% else %}#{% endif %}" id="download-bundle-link" class="btn btn-success" download>
                     <svg class="download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                         <polyline points="7 10 12 15 17 10"></polyline>
@@ -183,12 +221,13 @@
                         (multimodal runs only).</li>
                     <li><code>README.txt</code> — this same reference, included in the bundle.</li>
                 </ul>
+                {% if demo_mode %}<div id="demo-comparison" class="demo-result"></div>{% endif %}
             </div>
         </div>
 
         <!-- Log Generator Tab -->
         <div id="log-gen-tab" class="tab-content">
-            <div class="log-generator-container">
+            <div class="log-generator-container"{% if demo_mode %} inert{% endif %}>
                 <p class="section-description">
                     Create synthetic access logs by sampling the completed simulation's Access Control Matrix (ACM).
                     Logs download as CSV with columns: subject, object, environment, access (permit/deny).
@@ -243,6 +282,13 @@
                 </div>
 
             </div>
+            {% if demo_mode %}
+            <div class="demo-log-output">
+                <div class="demo-rules"><div><strong>Permit rule</strong><code id="demo-permit"></code></div><div><strong>Deny rule</strong><code id="demo-deny"></code></div></div>
+                <table><caption>Generated CSV excerpt</caption><thead><tr><th scope="col">Staff</th><th scope="col">Record</th><th scope="col">Condition</th><th scope="col">Decision</th></tr></thead><tbody id="demo-log-rows"></tbody></table>
+                <a href="{{ url_for('static', filename='demo/peaked-logs.csv') }}" download>Download sample CSV</a>
+            </div>
+            {% endif %}
         </div>
 
         <!-- Help & Guide Tab -->
@@ -355,8 +401,28 @@
             </div>
         </div>
         </div><!-- /.content-scroll -->
+        {% if demo_mode %}
+            </div><!-- /.demo-workspace -->
+        </div><!-- /.demo-layout -->
+        <footer class="demo-controls" aria-label="Demo playback">
+            <div class="demo-transport">
+                <button type="button" id="demo-toggle">Pause</button>
+                <button type="button" id="demo-restart">Restart</button>
+            </div>
+            <nav aria-label="Demo chapters">
+                <button type="button" aria-current="step">Overview</button>
+                <button type="button">Input</button>
+                <button type="button">Fit</button>
+                <button type="button">Compare</button>
+                <button type="button">Logs</button>
+                <button type="button">Try it</button>
+            </nav>
+            <progress id="demo-timeline" value="0" max="70" aria-label="Tour progress"></progress>
+        </footer>
+        {% endif %}
     </div>
 
+    {% if not demo_mode %}
     <!-- Schema Modal -->
     <div id="schema-modal" class="modal-overlay">
         <div class="modal-content">
@@ -1619,5 +1685,6 @@
             showMessage(message, type);
         }
     </script>
+    {% endif %}
 </body>
 </html>

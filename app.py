@@ -810,6 +810,11 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/demo')
+def demo():
+    return render_template('index.html', demo_mode=True)
+
+
 @app.route('/recaptcha-site-key', methods=['GET'])
 def get_recaptcha_site_key():
     """Return reCAPTCHA site key to frontend"""
