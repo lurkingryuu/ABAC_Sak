@@ -38,7 +38,7 @@
 
     async function load(name, read) {
         const response = await fetch(asset(name));
-        if (!response.ok) throw new Error('The tutorial example could not load.');
+        if (!response.ok) throw new Error('The demo example could not load.');
         return response[read]();
     }
 
@@ -55,7 +55,7 @@
             function check() {
                 const editors = workspace.editors();
                 if (editors.every(Boolean)) resolve(editors);
-                else if (Date.now() >= deadline) reject(new Error('The workspace editor is still loading. Try starting the tutorial again.'));
+                else if (Date.now() >= deadline) reject(new Error('The workspace editor is still loading. Try starting the demo again.'));
                 else setTimeout(check, 100);
             }
             check();
@@ -161,7 +161,7 @@
         const note = $('tutorial-note');
         const logPreview = $('tutorial-log-preview');
         const fieldButtons = [...$('tutorial-fields').querySelectorAll('button')];
-        const autoplayControls = ['tutorial-play', 'tutorial-restart', 'tutorial-progress'];
+        const controls = $('tutorial-controls');
         const replayInputs = [$('editor-tab'), $('multimodal-form'), $('log-generator-controls'), document.querySelector('.tabs')];
         const inputModes = ['editor', 'multimodal'];
         const collapsed = () => [document.querySelector('#editor-tab .editor-wrapper'), $('multimodal-form')]
@@ -171,12 +171,10 @@
         let exampleLogs;
         let sampleZip;
         let session;
-        let replay;
         let starting = false;
         let current = 0;
         let phase = -1;
         let highlight;
-        let liveInput;
         let elapsed = 0;
         let origin = 0;
         let playing = false;
@@ -247,20 +245,10 @@
             else clearFields();
         }
 
-        function setExampleInputs() {
-            session.models[1].setValue(JSON.stringify(example.minimal, null, 2));
-            setFiles(zipInput, [sampleZip]);
-        }
-
         function updateControls() {
             $('tutorial-back').disabled = current === 0;
-            $('tutorial-next').disabled = Boolean(!replay && current === 1 && !liveInput);
-            $('tutorial-next').textContent = current === steps.length - 1 ? 'Finish' : 'Next';
-            $('tutorial-next').hidden = Boolean(replay && current === steps.length - 1);
-            $('tutorial-load').hidden = current !== 1 || Boolean(replay);
+            $('tutorial-next').hidden = current === steps.length - 1;
             $('tutorial-logs').hidden = logPreview.hidden;
-            $('tutorial-mode').textContent = replay ? 'Hands-on' : 'Autoplay';
-            for (const id of autoplayControls) $(id).hidden = !replay;
         }
 
         function showOutput(index) {
@@ -277,12 +265,11 @@
             output.hidden = true;
             sketch.hidden = true;
             logPreview.hidden = true;
-            const resultTab = replay ? 'multimodal' : liveInput ?? 'multimodal';
-            const tab = ['editor', 'multimodal', resultTab, resultTab, 'log-gen'][index];
-            if (replay && index === 4) workspace.showExampleResult(asset('peaked-output.zip'));
+            const tab = ['editor', 'multimodal', 'multimodal', 'multimodal', 'log-gen'][index];
+            if (index >= 3) workspace.showExampleResult(asset('peaked-output.zip'));
             workspace.selectTab(tab);
             const [, heading, caption] = steps[index];
-            $('tutorial-step').textContent = `${index + 1} of ${steps.length} · ${replay ? 'Autoplay · Example run' : 'Hands-on tutorial'}`;
+            $('tutorial-step').textContent = `${index + 1} of ${steps.length} · Demo · Example run`;
             $('tutorial-heading').textContent = heading;
             setCaption(caption);
             setNote('');
@@ -290,37 +277,21 @@
 
             if (index < 2) {
                 workspace.expandInput(tab);
-                if (replay) {
-                    workspace.clearExampleResult();
-                    progress.style.display = 'none';
-                    download.style.display = 'none';
-                    if (index === 1) setFiles(zipInput, []);
-                }
-                if (index === 1 && !replay) setNote('Load the sample or use your own inputs. Complete verification and select Process Multimodal Input to continue.');
-                if (index === 0 && !replay) showConfigField(0);
-                if (index === 1 && !replay) {
-                    spotlight($('min-json-editor'));
-                    spotlightFields(1, [...entityKeys, ...ruleKeys]);
-                }
-            } else if (index === 2 && replay) {
+                workspace.clearExampleResult();
+                progress.style.display = 'none';
+                download.style.display = 'none';
+                if (index === 1) setFiles(zipInput, []);
+            } else if (index === 2) {
                 download.style.display = 'none';
                 workspace.collapseInput('multimodal');
                 progress.style.display = 'block';
                 setNote('Showing a completed example with shortened progress.');
                 spotlight(progress);
-            } else if (index === 2 || index === 3) {
-                if (replay) workspace.showExampleResult(asset('peaked-output.zip'));
-                setNote(replay ? '' : 'The ZIP is from your run. The inspector shows the saved multimodal example.');
+            } else if (index === 3) {
                 showOutput(index);
-                if (index === 2) spotlight($('output-bundle-summary'));
             } else {
-                if (replay) {
-                    $('num-logs').value = exampleLogs.count;
-                    $('allow-percentage').value = 100 * exampleLogs.permits / exampleLogs.count;
-                } else {
-                    setNote('Generate Logs to preview the first rows from your run and download the full CSV.');
-                    spotlight($('generate-logs-btn'));
-                }
+                $('num-logs').value = exampleLogs.count;
+                $('allow-percentage').value = 100 * exampleLogs.permits / exampleLogs.count;
             }
         }
 
@@ -413,45 +384,25 @@
             }
         }
 
-        function stopReplay() {
-            if (!replay) return;
-            setPlaying(false);
-            logPreview.hidden = true;
-            document.body.classList.remove('tutorial-autoplay');
-            replayInputs.forEach((element) => { element.inert = false; });
-            workspace.selectTab('editor');
-            workspace.restoreResult(replay.result);
-            $('num-logs').value = replay.logCount;
-            $('allow-percentage').value = replay.allowShare;
-            replay = null;
-        }
-
-        function startReplay() {
-            if (workspace.busy()) {
-                setNote('Wait for the current job to finish before starting autoplay.');
-                return;
-            }
-            replay = { result: workspace.snapshotResult(), logCount: $('num-logs').value, allowShare: $('allow-percentage').value };
-            replayInputs.forEach((element) => { element.inert = true; });
-            document.body.classList.add('tutorial-autoplay');
-            session.models[0].setValue(JSON.stringify(example.standard, null, 2));
-            session.models[1].setValue(JSON.stringify(example.minimal, null, 2));
-            renderTime(0, true);
-            setPlaying(true);
-        }
-
-        function clearAutoplayLink() {
+        function clearDemoLink() {
             const url = new URL(location.href);
-            if (!url.searchParams.has('tutorial')) return;
+            if (!url.searchParams.has('demo') && !url.searchParams.has('tutorial')) return;
+            url.searchParams.delete('demo');
             url.searchParams.delete('tutorial');
             history.replaceState(history.state, '', url);
         }
 
         function close() {
             starting = false;
-            stopReplay();
+            setPlaying(false);
             clearFields();
             if (session) {
+                document.body.classList.remove('tutorial-autoplay');
+                replayInputs.forEach((element) => { element.inert = false; });
+                workspace.selectTab('editor');
+                workspace.restoreResult(session.result);
+                $('num-logs').value = session.logCount;
+                $('allow-percentage').value = session.allowShare;
                 for (const [index, editor] of session.editors.entries()) {
                     editor.setModel(session.originals[index].model);
                     if (session.originals[index].view) editor.restoreViewState(session.originals[index].view);
@@ -467,19 +418,21 @@
             session = null;
             panel.hidden = true;
             start.hidden = false;
+            start.textContent = 'Start demo';
             output.hidden = true;
             sketch.hidden = true;
+            logPreview.hidden = true;
             output.replaceChildren();
             document.body.classList.remove('tutorial-active');
             spotlight(null);
-            clearAutoplayLink();
+            clearDemoLink();
             start.focus();
         }
 
         async function open() {
             if (session || starting) return;
             if (workspace.busy()) {
-                start.textContent = 'Wait for the current job, then start tutorial';
+                start.textContent = 'Wait for the current job, then start demo';
                 return;
             }
             starting = true;
@@ -487,11 +440,12 @@
             start.hidden = true;
             document.body.classList.add('tutorial-active');
             $('tutorial-fields').hidden = true;
-            $('tutorial-heading').textContent = 'Loading tutorial';
+            $('tutorial-heading').textContent = 'Loading demo';
             $('tutorial-caption').textContent = 'Preparing the existing workspace and example files.';
             $('tutorial-step').textContent = '';
             setNote('');
-            panel.querySelector('.tutorial-controls').hidden = true;
+            controls.hidden = true;
+            timeline.hidden = true;
             const attempt = Symbol();
             open.attempt = attempt;
             try {
@@ -507,17 +461,23 @@
                 sampleZip = zip instanceof File ? zip : new File([zip], 'peaked-input.zip', { type: 'application/zip' });
                 const originals = editors.map(editor => ({ model: editor.getModel(), view: editor.saveViewState() }));
                 const models = [example.standard, example.minimal].map(config => monaco.editor.createModel(JSON.stringify(config, null, 2), 'json'));
-                session = { editors, originals, models, tab: document.querySelector('.tab-btn.active').dataset.tab,
-                    files: [...zipInput.files], collapsed: collapsed() };
+                session = {
+                    editors, originals, models, tab: document.querySelector('.tab-btn.active').dataset.tab,
+                    files: [...zipInput.files], collapsed: collapsed(), result: workspace.snapshotResult(),
+                    logCount: $('num-logs').value, allowShare: $('allow-percentage').value,
+                };
                 editors.forEach((editor, index) => editor.setModel(models[index]));
                 setFiles(zipInput, []);
-                liveInput = null;
-                panel.querySelector('.tutorial-controls').hidden = false;
-                startReplay();
+                replayInputs.forEach((element) => { element.inert = true; });
+                document.body.classList.add('tutorial-autoplay');
+                controls.hidden = false;
+                timeline.hidden = false;
+                renderTime(0, true);
+                setPlaying(true);
                 $('tutorial-heading').focus({ preventScroll: true });
             } catch (error) {
                 if (starting && open.attempt === attempt) {
-                    $('tutorial-heading').textContent = 'Tutorial unavailable';
+                    $('tutorial-heading').textContent = 'Demo unavailable';
                     $('tutorial-caption').textContent = error.message;
                 }
             } finally {
@@ -526,11 +486,6 @@
         }
 
         function advance(offset) {
-            if (!replay) {
-                if (current === steps.length - 1 && offset > 0) close();
-                else showStage(current + offset);
-                return;
-            }
             const index = current + offset;
             const delay = playing ? 0 : [0, 7, 4.5, 0, 4][index];
             renderTime(steps[index][0] + delay, true);
@@ -543,45 +498,20 @@
         $('tutorial-back').addEventListener('click', () => advance(-1));
         $('tutorial-next').addEventListener('click', () => advance(1));
         fieldButtons.forEach((button, index) => button.addEventListener('click', () => {
-            if (replay) {
-                setPlaying(false);
-                renderTime(index * standardBeatSeconds);
-            } else {
-                workspace.selectTab('editor');
-                workspace.expandInput('editor');
-                showConfigField(index);
-            }
+            setPlaying(false);
+            renderTime(index * standardBeatSeconds);
         }));
-        $('tutorial-load').addEventListener('click', () => {
-            setExampleInputs();
-            sketch.hidden = false;
-            clearFields();
-            spotlight(sketch);
-            setCaption('The three drawings specify distributions for the first subject, object, and environment attributes. Each rightmost x-axis value gives the number of possible values.');
-            setNote('Example inputs loaded. Complete verification, then select Process Multimodal Input.');
-        });
-        $('tutorial-mode').addEventListener('click', () => {
-            if (!replay) startReplay();
-            else {
-                stopReplay();
-                showStage(0);
-            }
-        });
         $('tutorial-play').addEventListener('click', () => setPlaying(!playing));
         $('tutorial-restart').addEventListener('click', () => {
             renderTime(0, true);
             setPlaying(true);
         });
         for (const link of [$('download-bundle-link'), $('tutorial-logs')]) {
-            link.addEventListener('focus', () => { if (replay) setPlaying(false); });
+            link.addEventListener('focus', () => { if (session) setPlaying(false); });
         }
-        document.addEventListener('musima:job-completed', (event) => {
-            if (!session || replay) return;
-            liveInput = event.detail.input;
-            if (current <= 1) showStage(2);
-        });
-        if (new URL(location.href).searchParams.get('tutorial') === 'autoplay') open();
+        const params = new URL(location.href).searchParams;
+        if (params.get('demo') === '1' || params.get('tutorial') === 'autoplay') open();
     }
 
-    window.MuSimATutorial = { mount };
+    window.MuSimADemo = { mount };
 })();

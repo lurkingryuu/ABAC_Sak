@@ -1,9 +1,9 @@
 <aside id="tutorial" class="tutorial" aria-labelledby="tutorial-heading" hidden>
     <div class="tutorial-header">
         <p id="tutorial-step" class="tutorial-step"></p>
-        <button type="button" id="tutorial-exit" aria-label="Exit tutorial">Exit</button>
+        <button type="button" id="tutorial-exit" aria-label="Exit demo">Exit</button>
     </div>
-    <h2 id="tutorial-heading" tabindex="-1">MuSimA tutorial</h2>
+    <h2 id="tutorial-heading" tabindex="-1">MuSimA demo</h2>
     <div id="tutorial-fields" class="tutorial-controls" role="group" aria-label="Configuration fields" hidden>
         <button type="button" aria-pressed="false">Entities</button>
         <button type="button" aria-pressed="false">Subject</button>
@@ -14,14 +14,12 @@
     </div>
     <p id="tutorial-caption" aria-live="polite"></p>
     <div id="tutorial-note" class="tutorial-note" hidden></div>
-    <div class="tutorial-controls">
+    <div id="tutorial-controls" class="tutorial-controls" hidden>
         <button type="button" id="tutorial-back">Back</button>
         <button type="button" id="tutorial-next">Next</button>
-        <button type="button" id="tutorial-load" hidden>Load sample inputs</button>
-        <button type="button" id="tutorial-mode">Autoplay</button>
-        <button type="button" id="tutorial-play" hidden>Pause</button>
-        <button type="button" id="tutorial-restart" hidden>Restart</button>
+        <button type="button" id="tutorial-play">Pause</button>
+        <button type="button" id="tutorial-restart">Restart</button>
         <a id="tutorial-logs" href="{{ url_for('static', filename='demo/peaked-logs.csv') }}" download hidden>Download example CSV</a>
     </div>
-    <progress id="tutorial-progress" max="117" value="0" aria-label="Autoplay progress" hidden></progress>
+    <progress id="tutorial-progress" max="117" value="0" aria-label="Demo progress" hidden></progress>
 </aside>

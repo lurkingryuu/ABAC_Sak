@@ -814,7 +814,7 @@ def index():
 
 @app.route('/demo')
 def demo():
-    return redirect(url_for('index', tutorial='autoplay'))
+    return redirect(url_for('index', demo=1))
 
 
 @app.route('/recaptcha-site-key', methods=['GET'])

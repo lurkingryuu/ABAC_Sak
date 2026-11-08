@@ -19,7 +19,7 @@
         <div class="header">
             <h1>MuSimA</h1>
             <p class="subtitle">A Multi-Modal Simulator for ABAC Systems</p>
-            <button type="button" id="tutorial-start" hidden>Start tutorial</button>
+            <button type="button" id="tutorial-start" hidden>Start demo</button>
         </div>
         
         <div id="toast-container" class="toast-container" role="region" aria-live="polite" aria-label="Notifications"></div>
@@ -1056,9 +1056,6 @@
                             setTimeout(() => {
                                 downloadContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
                             }, 120);
-                            document.dispatchEvent(new CustomEvent('musima:job-completed', {
-                                detail: { input: lastSubmittedInput }
-                            }));
                             resolve(data);
                         } else if (status === 'failed') {
                             clearInterval(pollInterval);
@@ -1679,7 +1676,7 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            window.MuSimATutorial?.mount({
+            window.MuSimADemo?.mount({
                 editors: () => [monacoEditor, minMonacoEditor],
                 selectTab: (tab) => {
                     const button = document.querySelector(`.tab-btn[data-tab="${tab}"]`);

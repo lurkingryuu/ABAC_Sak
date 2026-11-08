@@ -55,7 +55,7 @@
     outline: 3px solid #6942b8;
     outline-offset: 2px;
 }
-.tutorial #tutorial-next, .tutorial #tutorial-load { background: #6040a5; color: white; }
+.tutorial #tutorial-next { background: #6040a5; color: white; }
 .tutorial #tutorial-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 8px 0; }
 .tutorial #tutorial-fields button { padding-inline: 6px; font-size: 12px; }
 .tutorial #tutorial-fields [aria-pressed="true"] {
